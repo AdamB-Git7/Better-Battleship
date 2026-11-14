@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { ZONES, ZONE_SPAN } from '../config.js';
 import { buildShipModel } from './shipModels.js';
 import { swellAt } from './sea.js';
+import { BOARD_POSITION } from './holoBoard.js';
 
 /** Where the captain's eyes are, in world coordinates. */
 export const BRIDGE_EYE = new THREE.Vector3(0, 12, ZONES.mine.center.z + ZONE_SPAN / 2 + 78);
@@ -91,7 +92,7 @@ export function createBridge(scene) {
 
     // Projector of the holographic board: a low base with a glowing ring.
     const projector = new THREE.Group();
-    projector.position.set(0, floorY, -4.6);
+    projector.position.set(0, floorY, BOARD_POSITION.z);
     projector.add(new THREE.Mesh(new THREE.CylinderGeometry(2.3, 2.6, 0.35, 28), trim).translateY(0.17));
     const ring = new THREE.Mesh(
         new THREE.TorusGeometry(2.05, 0.06, 8, 48).rotateX(Math.PI / 2),
@@ -103,7 +104,7 @@ export function createBridge(scene) {
 
     // Soft cyan light from the hologram, so the room is not pitch black.
     const glow = new THREE.PointLight(0x58d6ff, 14, 16, 2);
-    glow.position.set(0, -1.2, -4.6);
+    glow.position.set(0, -1.2, BOARD_POSITION.z);
     interior.add(glow);
 
     /** Shows the inside of the bridge (first person) or hides it (aerial view). */

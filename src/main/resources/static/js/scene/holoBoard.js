@@ -1,25 +1,38 @@
 // The holographic tactical board (blocks 3 and 4).
 //
-// A small glowing copy of the battlefield that floats in the bridge, in front
-// of the window: my zone with my ships (near side) and the enemy zone with the
-// results of my shots (far side). The player clicks its cells to fire.
+// Two glowing miniatures float in the bridge, in front of the window: the
+// enemy zone (with the results of my shots) and my own zone (with my ships).
+// The player clicks cells of the enemy zone to fire.
 //
-// Trick used here: the board is a group scaled down by HOLO_SCALE, and
-// everything inside it uses the SAME coordinates as the real sea. So a ship,
-// a marker or a cell is placed with the usual cellToWorld(), and it lands at
-// the matching spot of the miniature.
+// Only one zone is needed at a time, so the board has a "focus":
+//  - focus 'enemy' (my turn): the enemy zone is big, in the middle, easy to click;
+//    my zone shrinks to a small inset on the right.
+//  - focus 'mine' (their turn): my zone is big, to see where I am hit;
+//    the enemy zone shrinks to a small inset on the left.
+// The two zones slide and resize smoothly when the focus changes.
+//
+// Trick used here: each miniature is a group scaled down, and everything
+// inside it uses the SAME coordinates as the real sea. So a ship, a marker or
+// a cell is placed with the usual cellToWorld(), and it lands at the matching
+// spot of the miniature.
 //
 // Like the rest of the scene, the board only shows what the server sent:
 // enemy ships appear on it only once they are sunk.
 
 import * as THREE from 'three';
-import { CELL, GRID_SIZE, ZONES, ZONE_GAP, ZONE_SPAN, cellToWorld, worldToCell } from '../config.js';
+import { CELL, GRID_SIZE, ZONES, ZONE_SPAN, cellToWorld, worldToCell } from '../config.js';
 import { placeOnGrid } from './fleet.js';
 import { buildShipModel } from './shipModels.js';
 
-const HOLO_SCALE = 0.028;                          // 1 sea cell (10 units) = 0.28 units on the board
-const TILT = THREE.MathUtils.degToRad(14);         // far side slightly raised towards the eye
-const POSITION = new THREE.Vector3(0, -2.14, -4.64);   // relative to the captain's eye
+// Where the board floats, relative to the captain's eye (-z is forward), and
+// how much its far side is raised towards him.
+export const BOARD_POSITION = new THREE.Vector3(0, -2.0, -3.6);
+const TILT = THREE.MathUtils.degToRad(30);
+
+// The two places a zone can be in. scale: 1 sea cell (10 units) = scale * 10 on the board.
+const MAIN = { x: 0, z: 0, scale: 0.034 };
+const INSET = { x: 2.65, z: -0.6, scale: 0.014 };   // mirrored to the left for the enemy zone
+const SLIDE_SPEED = 4;                              // how fast zones move when the focus changes
 
 const MINE = 0x58d6ff;
 const ENEMY = 0xffb054;
@@ -38,28 +51,31 @@ function holo(color, opacity) {
  */
 export function createHoloBoard(parent) {
     const board = new THREE.Group();
-    board.position.copy(POSITION);
+    board.position.copy(BOARD_POSITION);
     board.rotation.x = TILT;
-    board.scale.setScalar(HOLO_SCALE);
     parent.add(board);
 
-    // ---- Static parts: base plate and the two grids --------------------------
-    const depth = ZONE_SPAN * 2 + ZONE_GAP;
-    const plate = new THREE.Mesh(
-        new THREE.PlaneGeometry(ZONE_SPAN + 14, depth + 14).rotateX(-Math.PI / 2),
-        holo(MINE, 0.06)
-    );
-    plate.position.y = -0.6;
-    board.add(plate);
-
+    // ---- The two miniatures ----------------------------------------------------
+    // slot  = the group that slides and scales on the board,
+    // inner = shifted so that the centre of the zone is the centre of the slot;
+    //         its children use sea coordinates.
+    const zones = {};
     const lineMaterials = [];
     for (const zone of Object.keys(ZONES)) {
+        const slot = new THREE.Group();
+        const inner = new THREE.Group();
+        inner.position.copy(ZONES[zone].center).negate();
+        slot.add(inner);
+        board.add(slot);
+        zones[zone] = { slot, inner, markers: new THREE.Group(), ships: new THREE.Group() };
+        inner.add(zones[zone].markers, zones[zone].ships);
+
         const color = zone === 'enemy' ? ENEMY : MINE;
-        // Faint tint under each zone, so the two grids read as two areas.
-        const tint = new THREE.Mesh(
-            new THREE.PlaneGeometry(ZONE_SPAN, ZONE_SPAN).rotateX(-Math.PI / 2), holo(color, 0.07));
-        tint.position.copy(ZONES[zone].center).y = -0.3;
-        board.add(tint);
+        // Faint plate under the zone, so the grid reads as a surface.
+        const plate = new THREE.Mesh(
+            new THREE.PlaneGeometry(ZONE_SPAN + 6, ZONE_SPAN + 6).rotateX(-Math.PI / 2), holo(color, 0.1));
+        plate.position.copy(ZONES[zone].center).y = -0.4;
+        inner.add(plate);
         for (const [positions, opacity] of gridLines(zone)) {
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -68,13 +84,43 @@ export function createHoloBoard(parent) {
             });
             material.userData.baseOpacity = opacity;
             lineMaterials.push(material);
-            board.add(new THREE.LineSegments(geometry, material));
+            inner.add(new THREE.LineSegments(geometry, material));
         }
     }
 
+    // ---- Focus: which zone is big ---------------------------------------------
+    let focus = 'mine';
+
+    function slotTarget(zone) {
+        if (zone === focus) {
+            return MAIN;
+        }
+        // My zone parks on the right, the enemy zone on the left.
+        return zone === 'mine' ? INSET : { x: -INSET.x, z: INSET.z, scale: INSET.scale };
+    }
+
+    function applySlots(ease) {
+        for (const zone of Object.keys(zones)) {
+            const { slot } = zones[zone];
+            const target = slotTarget(zone);
+            slot.position.x += (target.x - slot.position.x) * ease;
+            slot.position.z += (target.z - slot.position.z) * ease;
+            slot.scale.setScalar(slot.scale.x + (target.scale - slot.scale.x) * ease);
+        }
+    }
+    applySlots(1);
+
+    let pendingFocus = null;   // { zone, delay } while a change of focus is waiting
+
+    /**
+     * Chooses the big zone: 'enemy' to aim, 'mine' to watch the enemy's shots.
+     * @param delay seconds to wait first, so the result of a shot stays readable
+     */
+    function setFocus(zone, delay = 0) {
+        pendingFocus = { zone, delay };
+    }
+
     // ---- Shot markers -------------------------------------------------------
-    const markerGroup = new THREE.Group();
-    board.add(markerGroup);
     const markers = new Map();   // "zone:row:col" -> { state, object }
     const ringGeometry = new THREE.RingGeometry(CELL * 0.2, CELL * 0.32, 20).rotateX(-Math.PI / 2);
     const discGeometry = new THREE.CircleGeometry(CELL * 0.3, 20).rotateX(-Math.PI / 2);
@@ -93,21 +139,20 @@ export function createHoloBoard(parent) {
             return;
         }
         if (current) {
-            markerGroup.remove(current.object);
+            zones[zone].markers.remove(current.object);
             markers.delete(key);
         }
         if (shown) {
             const geometry = shown === 'MISS' ? ringGeometry : shown === 'HIT' ? discGeometry : tileGeometry;
             const object = new THREE.Mesh(geometry, materials[shown]);
-            cellToWorld(zone, row, col, object.position).y = 0.4;
-            markerGroup.add(object);
+            // Hits float above the ship holograms so they are not hidden inside them.
+            cellToWorld(zone, row, col, object.position).y = shown === 'MISS' ? 0.4 : 5;
+            zones[zone].markers.add(object);
             markers.set(key, { state: shown, object });
         }
     }
 
     // ---- Miniature ships ------------------------------------------------------
-    const shipGroup = new THREE.Group();
-    board.add(shipGroup);
     const ships = new Map();   // "zone:type" -> { key, object }
     const shipMaterials = {
         mine: holo(MINE, 0.32),
@@ -121,7 +166,7 @@ export function createHoloBoard(parent) {
             const [entryZone, type] = id.split(':');
             const layout = wanted.get(type);
             if (entryZone === zone && (!layout || entry.key !== shipKey(layout))) {
-                shipGroup.remove(entry.object);
+                zones[zone].ships.remove(entry.object);
                 ships.delete(id);
             }
         }
@@ -138,7 +183,7 @@ export function createHoloBoard(parent) {
                 }
             });
             placeOnGrid(object, zone, layout);
-            shipGroup.add(object);
+            zones[zone].ships.add(object);
             ships.set(id, { key: shipKey(layout), object });
         }
     }
@@ -146,9 +191,11 @@ export function createHoloBoard(parent) {
     /** Makes the board match a view sent by the server (null = empty board). */
     function sync(view) {
         if (!view) {
-            markerGroup.clear();
+            for (const zone of Object.keys(zones)) {
+                zones[zone].markers.clear();
+                zones[zone].ships.clear();
+            }
             markers.clear();
-            shipGroup.clear();
             ships.clear();
             return;
         }
@@ -168,7 +215,6 @@ export function createHoloBoard(parent) {
     for (let i = 0; i < 5; i++) {
         const tile = new THREE.Mesh(tileGeometry, hoverMaterial);
         tile.visible = false;
-        board.add(tile);
         hoverTiles.push(tile);
     }
 
@@ -177,6 +223,7 @@ export function createHoloBoard(parent) {
         hoverTiles.forEach((tile, i) => {
             tile.visible = i < cells.length;
             if (tile.visible) {
+                zones[zone].inner.add(tile);   // moves the tile into the right miniature
                 cellToWorld(zone, cells[i].row, cells[i].col, tile.position).y = 0.8;
             }
         });
@@ -188,26 +235,40 @@ export function createHoloBoard(parent) {
 
     // ---- Picking --------------------------------------------------------------
     // Intersect the mouse ray with the plane of the board, then convert the hit
-    // point into the board's own coordinates, which are sea coordinates.
+    // point into the coordinates of each miniature, which are sea coordinates.
     const plane = new THREE.Plane();
     const normal = new THREE.Vector3();
     const origin = new THREE.Vector3();
     const hitPoint = new THREE.Vector3();
+    const local = new THREE.Vector3();
 
     /** @returns {{zone: string, row: number, col: number}|null} */
     function pick(raycaster) {
-        board.updateWorldMatrix(true, false);
+        board.updateWorldMatrix(true, true);
         origin.setFromMatrixPosition(board.matrixWorld);
         normal.set(0, 1, 0).transformDirection(board.matrixWorld);
         plane.setFromNormalAndCoplanarPoint(normal, origin);
         if (!raycaster.ray.intersectPlane(plane, hitPoint)) {
             return null;
         }
-        board.worldToLocal(hitPoint);
-        return worldToCell('mine', hitPoint) || worldToCell('enemy', hitPoint);
+        for (const zone of Object.keys(zones)) {
+            const cell = worldToCell(zone, zones[zone].inner.worldToLocal(local.copy(hitPoint)));
+            if (cell) {
+                return cell;
+            }
+        }
+        return null;
     }
 
     function update(dt, time) {
+        if (pendingFocus) {
+            pendingFocus.delay -= dt;
+            if (pendingFocus.delay <= 0) {
+                focus = pendingFocus.zone;
+                pendingFocus = null;
+            }
+        }
+        applySlots(1 - Math.exp(-dt * SLIDE_SPEED));
         // Slight flicker of the lines and a pulse on the hit markers.
         const flicker = 0.9 + 0.1 * Math.sin(time * 17) * Math.sin(time * 3.1);
         for (const material of lineMaterials) {
@@ -216,7 +277,7 @@ export function createHoloBoard(parent) {
         materials.HIT.opacity = 0.7 + 0.25 * Math.sin(time * 5);
     }
 
-    return { sync, showHover, hideHover, pick, update };
+    return { sync, setFocus, showHover, hideHover, pick, update };
 }
 
 function shipKey(layout) {
@@ -235,5 +296,5 @@ function gridLines(zone) {
         target.push(center.x - half, 0, center.z + offset, center.x + half, 0, center.z + offset);
         target.push(center.x + offset, 0, center.z - half, center.x + offset, 0, center.z + half);
     }
-    return [[inner, 0.45], [frame, 1]];
+    return [[inner, 0.5], [frame, 1]];
 }

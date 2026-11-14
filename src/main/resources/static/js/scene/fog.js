@@ -169,21 +169,21 @@ export function createFog(scene) {
     // over the enemy zone. They are hidden in the aerial view, where they
     // would cover the enemy grid.
     const wall = [];
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 70; i++) {
         const material = new THREE.SpriteMaterial({
-            map: puffMap, color: 0x8c96a1, transparent: true, opacity: 0.55 + Math.random() * 0.3,
+            map: puffMap, color: 0xaeb6bf, transparent: true, opacity: 0.5 + Math.random() * 0.3,
             depthWrite: false, fog: false
         });
         const sprite = new THREE.Sprite(material);
-        const size = 80 + Math.random() * 70;
-        sprite.scale.set(size, size * 0.5, 1);
+        const size = 130 + Math.random() * 110;
+        sprite.scale.set(size, size * 0.3, 1);   // wide and low: a bank, not a cloud
         sprite.renderOrder = 2;
         sprite.visible = false;
         root.add(sprite);
         wall.push({
             sprite,
-            x: zone.x + (Math.random() - 0.5) * 260,
-            y: 5 + Math.random() * 16,
+            x: zone.x + (Math.random() - 0.5) * 520,
+            y: 4 + Math.random() * 13,
             z: zone.z + ZONE_SPAN / 2 + 6 - Math.random() * 150,
             phase: Math.random() * 100
         });

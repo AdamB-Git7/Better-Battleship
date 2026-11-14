@@ -93,6 +93,11 @@ export async function createWorld(canvas, sound, onProgress) {
         holo.hideHover();
     }
 
+    /** Which zone is big on the holographic board: 'enemy' to aim, 'mine' to watch. */
+    function setBoardFocus(zone, delay) {
+        holo.setFocus(zone, delay);
+    }
+
     /** Moves the player into the bridge (first person)... */
     function enterBridge() {
         bridge.setInside(true);
@@ -146,5 +151,5 @@ export async function createWorld(canvas, sound, onProgress) {
         fleet.sync('enemy', view.opponentShips, instant);
     }
 
-    return { showView, pickCell, showHover, hideHover, enterBridge, leaveBridge, fleet, effects, camera: rig };
+    return { showView, pickCell, showHover, hideHover, enterBridge, leaveBridge, setBoardFocus, fleet, effects, camera: rig };
 }

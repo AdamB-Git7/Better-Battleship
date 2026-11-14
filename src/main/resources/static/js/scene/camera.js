@@ -30,12 +30,12 @@ const VIEWS = {
 
 // Preset looks on the bridge (pitch in radians, negative = looking down).
 const LOOKS = {
-    board: THREE.MathUtils.degToRad(-28),    // at the holographic board, to aim
+    board: THREE.MathUtils.degToRad(-30),    // at the holographic board, to aim
     window: THREE.MathUtils.degToRad(-9)     // out of the window, to watch the shells
 };
 const MAX_YAW = 1.0;
 const MIN_PITCH = THREE.MathUtils.degToRad(-66);
-const MAX_PITCH = THREE.MathUtils.degToRad(14);
+const MAX_PITCH = THREE.MathUtils.degToRad(10);
 
 // Half a turn around the vertical axis (see flyTo).
 const FLIP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
@@ -68,8 +68,9 @@ export function createCameraRig(domElement) {
     const helper = new THREE.Object3D();
 
     function bridgeQuaternion(target, time = 0) {
-        // A very small sway, as if the ship was rolling under the captain's feet.
-        euler.set(look.pitch + Math.sin(time * 0.55) * 0.004, look.yaw, Math.sin(time * 0.7) * 0.007);
+        // A tiny sway, as if the ship was rolling under the captain's feet. It is
+        // kept very small so the cells of the holographic board stay easy to click.
+        euler.set(look.pitch + Math.sin(time * 0.55) * 0.001, look.yaw, Math.sin(time * 0.7) * 0.002);
         return target.setFromEuler(euler);
     }
 
@@ -183,8 +184,8 @@ export function createCameraRig(domElement) {
             return;
         }
         lookGoal = null;   // the player takes over
-        look.yaw = THREE.MathUtils.clamp(look.yaw + dx * 0.0028, -MAX_YAW, MAX_YAW);
-        look.pitch = THREE.MathUtils.clamp(look.pitch + dy * 0.0028, MIN_PITCH, MAX_PITCH);
+        look.yaw = THREE.MathUtils.clamp(look.yaw + dx * 0.0016, -MAX_YAW, MAX_YAW);
+        look.pitch = THREE.MathUtils.clamp(look.pitch + dy * 0.0016, MIN_PITCH, MAX_PITCH);
     }
 
     function resize(width, height) {

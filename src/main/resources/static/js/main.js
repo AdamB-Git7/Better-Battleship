@@ -215,6 +215,8 @@ function aimHead(delay) {
     if (onBridge()) {
         const aiming = view.status === 'IN_PROGRESS' && view.yourTurn;
         world.camera.lookAt(aiming ? 'board' : 'window', delay);
+        // The board shows the enemy zone big to aim, my own zone big otherwise.
+        world.setBoardFocus(aiming ? 'enemy' : 'mine', delay);
     }
 }
 
