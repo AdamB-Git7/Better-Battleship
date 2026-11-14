@@ -9,15 +9,19 @@
 // one pixel per grid cell. When a cell has been shot, its pixel fades to white
 // and the fog parts above it.
 //
+// In the storm the bank is dark and rain-soaked: it drifts with the wind
+// (weather.js) and lights up from inside when lightning strikes.
+//
 // The fog is only decoration. The enemy ships are not hidden by it: they are
 // simply not in the scene, because the server never sends their positions.
 
 import * as THREE from 'three';
 import { GRID_SIZE, ZONES, ZONE_SPAN } from '../config.js';
 import { puffTexture } from './textures.js';
+import { weather, WIND } from './weather.js';
 
 const LAYERS = 6;
-const LAYER_BOTTOM = 1.2;
+const LAYER_BOTTOM = 3.4;  // above the highest waves
 const LAYER_STEP = 0.7;    // a thin stack: holes stay lined up when seen at an angle
 const BANK_WIDTH = 420;    // the bank is wider and deeper than the grid,
 const BANK_DEPTH = 330;    // so it looks like weather, not like a lid
@@ -38,6 +42,8 @@ const fragmentShader = /* glsl */`
     uniform float uTime;
     uniform float uSeed;
     uniform float uOpacity;
+    uniform float uFlash;
+    uniform vec2 uWind;
     uniform vec3 uColor;
     uniform vec3 uShade;
     uniform sampler2D uMask;
@@ -69,9 +75,11 @@ const fragmentShader = /* glsl */`
 
     void main() {
         // Two noise fields sliding in different directions = billowing motion.
-        vec2 p = vWorld * 0.016 + uSeed * 9.3;
-        float n = fbm(p + vec2(uTime * 0.035, uTime * 0.02));
-        n += 0.5 * fbm(p * 2.1 - vec2(uTime * 0.05, -uTime * 0.03));
+        // The whole pattern slides downwind; the second field slides a bit
+        // sideways too, which makes the fog roll instead of just moving.
+        vec2 p = vWorld * 0.016 + uSeed * 9.3 - uWind * uTime * 0.11;
+        float n = fbm(p);
+        n += 0.5 * fbm(p * 2.1 + vec2(uTime * 0.03, -uTime * 0.05));
         float density = smoothstep(0.25, 0.95, n);
 
         // Thick over the grid, thinner (patchy) around it.
@@ -91,8 +99,11 @@ const fragmentShader = /* glsl */`
         float reveal = smoothstep(0.1, 0.4, texture2D(uMask, zoneUv).r) * inZone;
         alpha *= 1.0 - reveal;
 
-        vec3 color = mix(uShade, uColor, density);
+        // Lightning lights the bank from inside, more where it is thick.
+        vec3 color = mix(uShade, uColor, density) * (1.0 + uFlash * (1.5 + 2.5 * density));
         gl_FragColor = vec4(color, alpha * uOpacity);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
     }
 `;
 
@@ -124,9 +135,11 @@ export function createFog(scene) {
             uniforms: {
                 uTime: { value: 0 },
                 uSeed: { value: i + 1 },
-                uOpacity: { value: 0.62 },
-                uColor: { value: new THREE.Color(0xe4e7ea) },
-                uShade: { value: new THREE.Color(0x6f7a86) },
+                uOpacity: { value: 0.7 },
+                uFlash: { value: 0 },
+                uWind: { value: WIND },
+                uColor: { value: new THREE.Color(0x87919a) },
+                uShade: { value: new THREE.Color(0x2e363d) },
                 uMask: { value: mask },
                 uZoneMin: { value: new THREE.Vector2(zone.x - ZONE_SPAN / 2, zone.z - ZONE_SPAN / 2) },
                 uZoneSpan: { value: ZONE_SPAN }
@@ -142,12 +155,16 @@ export function createFog(scene) {
 
     // ---- Drifting mist sprites --------------------------------------------
     const puffMap = puffTexture();
+    const puffColor = new THREE.Color(0x68727a);
+    const wallColor = new THREE.Color(0x6f7a83);
+    const sprites = [];   // every sprite with its colour in calm weather, for the lightning
     const puffs = [];
     for (let i = 0; i < 16; i++) {
         const material = new THREE.SpriteMaterial({
-            map: puffMap, color: 0xd5d9dd, transparent: true, opacity: 0, depthWrite: false, fog: false
+            map: puffMap, color: puffColor, transparent: true, opacity: 0, depthWrite: false, fog: false
         });
         const sprite = new THREE.Sprite(material);
+        sprites.push({ material, color: puffColor });
         const size = 70 + Math.random() * 70;
         sprite.scale.set(size, size * 0.55, 1);
         sprite.renderOrder = 2;
@@ -156,8 +173,8 @@ export function createFog(scene) {
             sprite,
             baseX: zone.x + (Math.random() - 0.5) * 300,
             z: zone.z - 75 - Math.random() * 130,   // behind the grid, so holes stay clear
-            y: 9 + Math.random() * 9,
-            speed: 1.5 + Math.random() * 2.5,
+            y: 11 + Math.random() * 9,
+            speed: 4 + Math.random() * 5,     // the wind pushes them along
             phase: Math.random() * 100,
             opacity: 0.2 + Math.random() * 0.18
         });
@@ -171,10 +188,11 @@ export function createFog(scene) {
     const wall = [];
     for (let i = 0; i < 70; i++) {
         const material = new THREE.SpriteMaterial({
-            map: puffMap, color: 0xaeb6bf, transparent: true, opacity: 0.5 + Math.random() * 0.3,
+            map: puffMap, color: wallColor, transparent: true, opacity: 0.5 + Math.random() * 0.3,
             depthWrite: false, fog: false
         });
         const sprite = new THREE.Sprite(material);
+        sprites.push({ material, color: wallColor });
         const size = 130 + Math.random() * 110;
         sprite.scale.set(size, size * 0.3, 1);   // wide and low: a bank, not a cloud
         sprite.renderOrder = 2;
@@ -183,7 +201,7 @@ export function createFog(scene) {
         wall.push({
             sprite,
             x: zone.x + (Math.random() - 0.5) * 520,
-            y: 4 + Math.random() * 13,
+            y: 5 + Math.random() * 16,
             z: zone.z + ZONE_SPAN / 2 + 6 - Math.random() * 150,
             phase: Math.random() * 100
         });
@@ -209,6 +227,8 @@ export function createFog(scene) {
         target.fill(0);
     }
 
+    let lastFlash = 0;
+
     function update(dt, time) {
         // Move every mask pixel towards its target and upload only if it changed.
         let changed = false;
@@ -231,6 +251,14 @@ export function createFog(scene) {
 
         for (const layer of layers) {
             layer.material.uniforms.uTime.value = time;
+            layer.material.uniforms.uFlash.value = weather.flash;
+        }
+        // The mist sprites brighten with the lightning too (only touched when it changes).
+        if (weather.flash !== lastFlash) {
+            lastFlash = weather.flash;
+            for (const item of sprites) {
+                item.material.color.copy(item.color).multiplyScalar(1 + lastFlash * 3.5);
+            }
         }
         for (const item of wall) {
             // The wall barely moves: a slow sideways drift.
