@@ -1,6 +1,6 @@
 # Better Battleship (3D)
 
-A real-time multiplayer Battleship game played in the browser, drawn in **3D with Three.js**: an animated sea, low-poly warships, a fog bank over the enemy waters, shells, explosions and splashes. Create a room, share the 6-letter code with a friend, place your fleet, and take turns firing.
+A real-time multiplayer Battleship game played in the browser, drawn in **3D with Three.js** and fought in a **thunderstorm**: a rough sea with real waves, detailed warships, lightning and thunder, driving rain, a fog bank over the enemy waters, shells, explosions and splashes. Create a room, share the 6-letter code with a friend, place your fleet, and take turns firing.
 
 This is the 3D version of my original [Battleship](https://github.com/AdamB-Git7/Battleship). The Java server, the rules, the network protocol and the tests are the same; only the display changed.
 
@@ -11,13 +11,17 @@ Built in Java with Spring Boot and WebSockets, covered by 118 automated tests.
 ## Features
 
 - **Rooms with codes**: one player creates a room, the other joins with its code (case-insensitive)
-- **3D scene**: a sea that reaches the horizon, a late-afternoon sky, ships that float and leave a wake, a tilted aerial camera you can orbit, zoom and pan
+- **3D scene in a thunderstorm**: heavy moving storm clouds, wind-slanted rain, a dark sea with real waves, whitecaps and wind streaks, ships that ride the swell, a tilted aerial camera you can orbit, zoom and pan
+- **Lightning and thunder**: every 6 to 15 seconds a branching bolt strikes in the distance and lights the clouds, the sea, the ships, the fog and the bridge for a few frames; the thunder arrives later, depending on the distance (a crack when close, a long rumble when far). Flashes are short and never pure white, and become one soft glow if your system asks for reduced motion
+- **A reactive world**: one wind drives everything together: gusts slant the rain, raise the chop, roll the ships, bend the flames, carry the smoke and make the wind howl in the sound
+- **Warships built in code**: lofted hulls (flared bow, red anti-fouling paint, waterline band), weathered paint, turrets with barrels, masts with radar, funnels, lifeboats, railings, hull numbers, a carrier with an angled flight deck and parked aircraft, a submarine with sail and dive planes
+- **Sound design** (all synthesised, no audio files): rain, gusting wind and waves as a continuous ambience (muffled inside the bridge with rain drumming on the roof, open in the aerial view, with a crossfade), thunder, and heavier guns, explosions and splashes that get quieter with distance. `SOUND ON/OFF` mutes everything
 - **Ship placement** with a live 3D preview (green if valid, red if not), rotation (button, `R` or right click), and server-side checks for edges and overlaps
-- **Turn-based firing**: a shell flies in an arc to the target; a hit explodes and burns, a miss splashes, a sunk ship goes down
-- **Captain's bridge**: once the fleets are placed, you command in first person from the bridge of your flagship. Through the large window you see your fleet ahead and the fog bank in the distance
-- **Holographic tactical board**: a glowing miniature of the battlefield floats in the bridge. Click one of its cells to fire: one of your ships (picked at random) sends a shell into the fog, and enemy shells come out of the fog at your fleet. `V` switches to the aerial view and back
+- **Turn-based firing**: a shell flies in an arc to the target; a hit explodes and burns (fires light the ships and the water around them), a miss throws up a column of water, a sunk ship goes down and leaves a wreck
+- **Captain's bridge**: once the fleets are placed, you command in first person from the bridge of your flagship. The bridge is a dark steel room with red night lighting, instrument screens, rain running down the glass, and windows that continue into the roof: you see your own gun turrets, your fleet ahead, the storm above and the fog bank in the distance
+- **Holographic tactical board**: a projector on the floor throws a miniature of the battlefield into the air (scanlines, a faint beam, glass-like ship models, interference when lightning strikes). Click one of its cells to fire: one of your ships (picked at random) sends a shell into the fog, and enemy shells come out of the fog at your fleet. `V` switches to the aerial view and back
 - **Pirate guide**: Rusty, the first mate, sits in the bottom-left corner and comments on the game (wake-up intro, placement tips, hits, misses, sunk ships, victory). Click him to repeat his last line, or turn him off with the `GUIDE` button
-- **Fog of war**: a fog bank covers the enemy zone and opens above each cell you shoot
+- **Fog of war**: a dark, wind-driven fog bank covers the enemy zone and opens above each cell you shoot
 - **Server-side rules**: wrong turn, repeated shots, off-board shots and moves from outside the game are all refused
 - **Win detection**, then **rematch** (both players must agree) or **leave** (the opponent is told and returned to the menu; closing the tab counts as leaving)
 - **Hidden boards**: a player's browser never receives the opponent's ship positions. The fog is only decoration: enemy ships are not in the 3D scene at all until the server reveals them (when sunk)
@@ -147,12 +151,14 @@ src/main/resources/static/
 │   ├── net/network.js        STOMP WebSocket client (same protocol as the 2D game)
 │   ├── game/viewDiff.js      Finds the new shot between two server views
 │   ├── game/guide.js         The pirate guide's lines and when he says them
-│   ├── scene/                world, sky, sea, grid, shipModels, fleet, fog, effects, camera, textures,
+│   ├── scene/                world (builds everything, render loop), camera, grid, fleet, fog, effects, textures,
+│   │                         storm (sky dome, lightning, rain, light), weather (wind and flash shared by all),
+│   │                         sea (wave formula in GLSL and JS, sea shader), shipModels (ships generated in code),
 │   │                         bridge (flagship and bridge interior), holoBoard (holographic tactical board)
 │   ├── ui/                   hud.js (interface), input.js (mouse on the canvas), pirate.js (portrait and speech bubble)
-│   └── audio/sound.js        Cannon, explosion and splash, synthesised with Web Audio
+│   └── audio/sound.js        Storm ambience, thunder, cannon, explosion and splash, synthesised with Web Audio
 ├── assets/textures/          waternormals.jpg (wave normal map)
-└── vendor/                   three.js r170 (+ Water, Sky, OrbitControls), stomp.js
+└── vendor/                   three.js r170 (+ OrbitControls), stomp.js
 src/test/java/...            unit and integration tests
 deploy/                      systemd service, server setup and deploy scripts
 ```
@@ -173,7 +179,7 @@ I built this with [Claude Code](https://claude.com/claude-code) as a development
 ## What I'd add next
 
 - A big map and special powers (for example a rocket that hits several cells)
-- Real glTF ship models and recorded sound effects
+- Real glTF ship models and recorded sound effects (today both are generated in code)
 - HTTPS with a domain name
 - Continuous deployment from GitHub Actions on every push
 - Reconnecting to your game after a page refresh
@@ -184,7 +190,7 @@ I built this with [Claude Code](https://claude.com/claude-code) as a development
 
 ## Credits
 
-- [Three.js](https://github.com/mrdoob/three.js) (MIT licence), including its `Water`, `Sky` and `OrbitControls` examples and the `waternormals.jpg` texture
+- [Three.js](https://github.com/mrdoob/three.js) (MIT licence), including its `OrbitControls` example and the `waternormals.jpg` texture. Everything else in the scene (sky, sea, ships, textures, sounds) is generated in code
 - [STOMP.js](https://github.com/stomp-js/stompjs) (Apache 2.0 licence)
 
 ---

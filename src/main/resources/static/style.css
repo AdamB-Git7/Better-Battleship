@@ -381,3 +381,15 @@ input::placeholder { color: var(--muted); letter-spacing: 0.12em; }
     .banner { animation: none; }
     .pirate-portrait svg, .pirate-eye, .pirate.talking .pirate-mouth { animation: none; }
 }
+
+/* ---- Storm mood ---- */
+/* A dark vignette around the picture: the eye is drawn to the middle, and the
+   corners feel like the inside of a storm. It sits under the panels and lets
+   the mouse through. */
+#hud::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 55%, rgba(2, 5, 8, 0.55) 100%);
+}
