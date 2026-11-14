@@ -197,6 +197,7 @@ export function createHud(actions) {
         /** Shown while a shell is in the air, before the result is known. */
         showShellInFlight(mine) {
             setTurn(mine ? 'Shell away…' : 'Incoming!', mine ? 'mine' : 'theirs');
+            el.status.textContent = mine ? 'Shell in the air…' : 'Incoming shell, brace!';
         },
 
         showError(message) {

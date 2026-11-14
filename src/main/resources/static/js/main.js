@@ -192,7 +192,7 @@ function showView(newView, shot) {
     }
     hud.showGame(view, orientation, onBridge());
     pirate.say(guide.onView(previous, view, shot));
-    aimHead(shot ? 1.8 : 0.4);
+    aimHead(shot ? 1.2 : 0.4);   // after a shot, watch the impact a moment first
     refreshHover();
 }
 

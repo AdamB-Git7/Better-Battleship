@@ -326,8 +326,16 @@ export function createHoloBoard(parent, floorY = -3.2) {
         }
         if (shown) {
             const object = buildMarker(shown);
-            // Hits float above the ship holograms so they are not hidden inside them.
-            cellToWorld(zone, row, col, object.position).y = shown === 'MISS' ? 0.4 : 6.5;
+            // Markers lie on the board itself (raised markers looked shifted from
+            // their cell in the tilted view) and are drawn on top of everything,
+            // so a ship hologram never hides them.
+            cellToWorld(zone, row, col, object.position).y = 0.6;
+            object.traverse(child => {
+                if (child.material) {
+                    child.material.depthTest = false;
+                    child.renderOrder = 12;
+                }
+            });
             zones[zone].markers.add(object);
             markers.set(key, { state: shown, object });
         }
