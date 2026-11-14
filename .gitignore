@@ -32,3 +32,6 @@ build/
 .vscode/
 PLANNING.md
 Explanation.md
+
+### Claude Code local settings ###
+.claude/

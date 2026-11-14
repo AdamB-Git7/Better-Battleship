@@ -1,23 +1,23 @@
-# Online Battleship
+# Better Battleship (3D)
 
-A real-time multiplayer Battleship game played in the browser. Create a room, share the 6-letter code with a friend, place your fleet, and take turns firing. Both screens update live.
+A real-time multiplayer Battleship game played in the browser, drawn in **3D with Three.js**: an animated sea, low-poly warships, a fog bank over the enemy waters, shells, explosions and splashes. Create a room, share the 6-letter code with a friend, place your fleet, and take turns firing.
 
-**▶ Play it: http://18.219.114.254**
+This is the 3D version of my original [Battleship](https://github.com/AdamB-Git7/Battleship). The Java server, the rules, the network protocol and the tests are the same; only the display changed.
 
-![Two players mid-game: your fleet on the left, enemy waters on the right](docs/screenshot.png)
-
-Built solo in Java with Spring Boot and WebSockets, covered by 118 automated tests, and deployed on AWS EC2.
+Built in Java with Spring Boot and WebSockets, covered by 118 automated tests.
 
 ---
 
 ## Features
 
 - **Rooms with codes**: one player creates a room, the other joins with its code (case-insensitive)
-- **Ship placement** with a live preview, rotation (button or `R`), and server-side checks for edges and overlaps
-- **Turn-based firing**: hit, miss and sunk appear instantly on both screens
+- **3D scene**: a sea that reaches the horizon, a late-afternoon sky, ships that float and leave a wake, a tilted aerial camera you can orbit, zoom and pan
+- **Ship placement** with a live 3D preview (green if valid, red if not), rotation (button, `R` or right click), and server-side checks for edges and overlaps
+- **Turn-based firing**: a shell flies in an arc to the target; a hit explodes and burns, a miss splashes, a sunk ship goes down
+- **Fog of war**: a fog bank covers the enemy zone and opens above each cell you shoot
 - **Server-side rules**: wrong turn, repeated shots, off-board shots and moves from outside the game are all refused
 - **Win detection**, then **rematch** (both players must agree) or **leave** (the opponent is told and returned to the menu; closing the tab counts as leaving)
-- **Hidden boards**: a player's browser never receives the opponent's ship positions
+- **Hidden boards**: a player's browser never receives the opponent's ship positions. The fog is only decoration: enemy ships are not in the 3D scene at all until the server reveals them (when sunk)
 
 ---
 
@@ -77,10 +77,9 @@ Games are short-lived, so they live in memory. The trade-off: restarting the ser
 |---|---|
 | Language | Java 21 |
 | Framework | Spring Boot 4 (Spring Web, WebSocket + STOMP) |
-| Front end | Plain HTML, CSS and JavaScript, ships drawn as SVG, [STOMP.js](https://github.com/stomp-js/stompjs) |
+| Front end | Plain HTML, CSS and JavaScript modules (no build step), [Three.js](https://threejs.org) r170 for the 3D scene, [STOMP.js](https://github.com/stomp-js/stompjs) |
 | Tests | JUnit 5, including integration tests with real WebSocket clients |
 | Build | Maven (wrapper included) |
-| Hosting | AWS EC2 (Amazon Linux 2023, t3.micro), systemd, Elastic IP |
 
 ---
 
@@ -107,6 +106,10 @@ Requires **Java 21** or newer.
 
 On Windows, use `mvnw.cmd spring-boot:run`. Then open **http://localhost:8080** in two browser windows (or a normal and a private window) and play against yourself.
 
+The browser needs WebGL (any recent Chrome, Edge, Firefox or Safari). Three.js is stored in the project (`static/vendor`), so no internet connection is needed.
+
+**Controls:** left click places a ship or fires · `R` or right click rotates the ship · drag with the left button to orbit, with the right button to pan · mouse wheel to zoom.
+
 To build the runnable jar (this also runs all the tests):
 
 ```bash
@@ -118,12 +121,7 @@ java -jar target/battleship-0.0.1-SNAPSHOT.jar
 
 ## Deployment
 
-The game runs on an **AWS EC2** t3.micro with Amazon Linux 2023 and Amazon Corretto 21, at a permanent Elastic IP.
-
-- The jar runs as a **systemd** service ([`deploy/battleship.service`](deploy/battleship.service)): it restarts automatically after a crash and starts at boot.
-- It runs as a dedicated **unprivileged, no-login user**, with only the capability needed to listen on port 80, rather than as root.
-- The firewall allows **HTTP (80)** from anywhere and **SSH (22)** from a single IP only, with key-based login.
-- Updates go out with one script, [`deploy/deploy.ps1`](deploy/deploy.ps1): build and test (it stops if any test fails), copy the jar, restart the service.
+Not deployed yet. The `deploy/` folder holds the systemd service and scripts from the original project (AWS EC2); they need their own server address before they can be used for this version.
 
 ---
 
@@ -136,7 +134,18 @@ src/main/java/com/adam/battleship/
 ├── controller/   WebSocket message handlers, private updates, leaving, error handling
 ├── dto/          The messages sent between browser and server
 └── config/       WebSocket/STOMP setup, player IDs at the handshake
-src/main/resources/static/   index.html, app.js, ships.js, style.css
+src/main/resources/static/
+├── index.html, style.css     Page and interface (HUD) styles
+├── js/
+│   ├── main.js               Entry point: links network, game flow, 3D world and HUD
+│   ├── config.js             Grid size, ship lengths, (row, col) <-> world coordinates
+│   ├── net/network.js        STOMP WebSocket client (same protocol as the 2D game)
+│   ├── game/viewDiff.js      Finds the new shot between two server views
+│   ├── scene/                world, sky, sea, grid, shipModels, fleet, fog, effects, camera, textures
+│   ├── ui/                   hud.js (interface), input.js (mouse on the canvas)
+│   └── audio/sound.js        Cannon, explosion and splash, synthesised with Web Audio
+├── assets/textures/          waternormals.jpg (wave normal map)
+└── vendor/                   three.js r170 (+ Water, Sky, OrbitControls), stomp.js
 src/test/java/...            unit and integration tests
 deploy/                      systemd service, server setup and deploy scripts
 ```
@@ -149,17 +158,27 @@ I built this with [Claude Code](https://claude.com/claude-code) as a development
 
 - **I wrote the core game logic** myself: the board, ships, shooting, turns, win detection, rooms, rematch, and the per-player views that hide the opponent's ships.
 - **AI helped with** project setup, the WebSocket controllers, the front end and its visuals, deployment scripts, writing tests, and reviewing my code.
+- **The 3D front end** of this version (the Three.js scene, effects and interface) was built with Claude Code from my specification, on top of the unchanged server.
 - **Every AI change was tested**, and tests were checked by deliberately breaking the code. That process caught real problems, including a race condition in an early design and gaps in AI-written tests, which were then fixed.
 
 ---
 
 ## What I'd add next
 
+- A pirate guide, a first-person view from the captain's bridge and a holographic tactical board
+- Real glTF ship models and recorded sound effects
 - HTTPS with a domain name
 - Continuous deployment from GitHub Actions on every push
 - Reconnecting to your game after a page refresh
 - An AI opponent (hunt-and-target) for single-player games
 - Shared game state (for example Redis) so a deploy doesn't end games, and several servers behind a load balancer
+
+---
+
+## Credits
+
+- [Three.js](https://github.com/mrdoob/three.js) (MIT licence), including its `Water`, `Sky` and `OrbitControls` examples and the `waternormals.jpg` texture
+- [STOMP.js](https://github.com/stomp-js/stompjs) (Apache 2.0 licence)
 
 ---
 

@@ -1,0 +1,249 @@
+// Entry point: connects the three parts of the front end.
+//
+//   network (STOMP)  --->  game flow (this file)  --->  3D world + HUD
+//
+// The server is the only source of truth. This file keeps the last view it
+// received, decides what the player is allowed to click, and plays the shot
+// animation before showing each new view.
+
+import { cellToWorld, inBounds, shipCells, ZONES, ZONE_SPAN } from './config.js';
+import { createNetwork } from './net/network.js';
+import { findNewShot } from './game/viewDiff.js';
+import { createSound } from './audio/sound.js';
+import { createWorld } from './scene/world.js';
+import { DECK_HEIGHT } from './scene/shipModels.js';
+import { createHud } from './ui/hud.js';
+import { createInput } from './ui/input.js';
+
+const HOVER_VALID = 0x4dff88;
+const HOVER_INVALID = 0xff4a3d;
+const HOVER_TARGET = 0xffc46b;
+
+// ---- State ------------------------------------------------------------------
+let roomCode = null;            // null = in the lobby
+let view = null;                // last view shown on screen
+let orientation = 'HORIZONTAL'; // direction of the ship being placed
+let hover = null;               // cell under the mouse
+let animating = false;          // a shell is in the air
+
+const canvas = document.getElementById('scene');
+const sound = createSound();
+
+const hud = createHud({
+    onCreate: () => network.createRoom(),
+    onJoin: code => network.joinRoom(code),
+    onRotate: rotate,
+    onRematch: () => network.rematch(),
+    onLeave: leave,
+    onMute: () => sound.toggleMute()
+});
+
+const network = createNetwork({
+    onConnection: connected => hud.setConnected(connected),
+    onRoom: room => {
+        roomCode = room.code;
+        hud.showRoom(room);
+    },
+    onGame: receiveView,
+    onError: message => hud.showError(message),
+    onLeft: message => backToLobby(message)
+});
+
+let world;
+try {
+    world = await createWorld(canvas, sound, progress => hud.setLoading(progress));
+} catch (error) {
+    // Usually: WebGL is not available, or an asset failed to load.
+    hud.setLoading(0, 'Could not start the 3D scene. Check that WebGL is enabled, then refresh.');
+    throw error;
+}
+hud.setLoading(1, 'Ready');
+hud.hideLoading();
+
+createInput(canvas, {
+    onMove: (x, y) => {
+        hover = world.pickCell(x, y);
+        refreshHover();
+    },
+    onLeave: () => {
+        hover = null;
+        refreshHover();
+    },
+    onClick: (x, y) => {
+        const cell = world.pickCell(x, y);
+        if (!cell) {
+            return;
+        }
+        if (cell.zone === 'mine') {
+            placeShip(cell.row, cell.col);
+        } else {
+            fireAt(cell.row, cell.col);
+        }
+    },
+    onRightClick: rotate
+});
+
+document.addEventListener('keydown', event => {
+    if ((event.key === 'r' || event.key === 'R') && !hud.isTypingCode(event.target)) {
+        rotate();
+    }
+});
+
+network.connect();
+
+// ---- Views from the server -----------------------------------------------------
+// Views are handled one at a time, in order. If a view contains a new shot,
+// the shell animation is played first and the result is revealed on impact.
+const pending = [];
+let processing = false;
+
+function receiveView(newView) {
+    if (roomCode === null) {
+        return;
+    }
+    pending.push(newView);
+    if (!processing) {
+        processViews();
+    }
+}
+
+async function processViews() {
+    processing = true;
+    while (pending.length > 0 && roomCode !== null) {
+        const next = pending.shift();
+        const shot = findNewShot(view, next);
+        if (shot) {
+            animating = true;
+            refreshHover();
+            hud.showShellInFlight(shot.zone === 'enemy');
+            await playShot(shot);
+            animating = false;
+            if (roomCode === null) {
+                break;   // the player left while the shell was flying
+            }
+        }
+        showView(next);
+    }
+    processing = false;
+}
+
+/** Flies a shell to the target cell. Resolves when it lands. */
+function playShot(shot) {
+    return new Promise(resolve => {
+        const hit = shot.result !== 'MISS';
+        let from;
+        let to;
+        if (shot.zone === 'enemy') {
+            // My shot: from one of my ships into the fog.
+            from = world.fleet.randomMuzzle();
+            to = cellToWorld('enemy', shot.row, shot.col).setY(hit ? 1 : 0);
+        } else {
+            // Enemy shot: we do not know where their ships are (and must not),
+            // so the shell simply comes out of a random point of the fog.
+            from = ZONES.enemy.center.clone();
+            from.x += (Math.random() - 0.5) * ZONE_SPAN * 0.8;
+            from.z += (Math.random() - 0.5) * ZONE_SPAN * 0.8;
+            from.y = 5;
+            to = cellToWorld('mine', shot.row, shot.col).setY(hit ? DECK_HEIGHT : 0);
+        }
+        world.effects.fireShell(from, to, () => {
+            if (hit) {
+                world.effects.explosion(to);
+            } else {
+                world.effects.splash(to);
+            }
+            resolve();
+        });
+    });
+}
+
+function showView(newView) {
+    const previous = view;
+    view = newView;
+    // The very first view of a room is drawn without animations.
+    world.showView(view, previous === null);
+    hud.showGame(view, orientation);
+    if (!previous || previous.status !== view.status) {
+        world.camera.flyTo(view.status === 'PLACING_SHIPS' ? 'placement' : 'battle');
+    }
+    refreshHover();
+}
+
+function backToLobby(message) {
+    roomCode = null;
+    view = null;
+    pending.length = 0;
+    animating = false;
+    world.showView(null);
+    world.camera.flyTo('lobby');
+    hud.showLobby(message);
+    refreshHover();
+}
+
+function leave() {
+    const midGame = view !== null && (view.status === 'PLACING_SHIPS' || view.status === 'IN_PROGRESS');
+    if (midGame && !confirm('Leave this game? Your opponent will be sent back to the menu.')) {
+        return;
+    }
+    network.leave();
+    backToLobby(null);
+}
+
+// ---- Player actions ------------------------------------------------------------
+// These checks only avoid useless messages: the server validates every move again.
+
+function isPlacing() {
+    return view !== null && view.status === 'PLACING_SHIPS' && view.shipsToPlace.length > 0;
+}
+
+function canFire() {
+    return view !== null && view.status === 'IN_PROGRESS' && view.yourTurn && !animating;
+}
+
+/** Same rule as the server: the ship must be on the board and on free cells. */
+function fits(type, row, col) {
+    return shipCells(type, row, col, orientation)
+        .every(cell => inBounds(cell) && view.yourBoard[cell.row][cell.col] === 'EMPTY');
+}
+
+function placeShip(row, col) {
+    if (isPlacing()) {
+        network.placeShip(roomCode, view.shipsToPlace[0], row, col, orientation);
+    }
+}
+
+function fireAt(row, col) {
+    if (canFire() && view.opponentBoard[row][col] === 'EMPTY') {
+        network.fire(roomCode, row, col);
+    }
+}
+
+function rotate() {
+    if (!isPlacing()) {
+        return;
+    }
+    orientation = orientation === 'HORIZONTAL' ? 'VERTICAL' : 'HORIZONTAL';
+    hud.showGame(view, orientation);
+    refreshHover();
+}
+
+/** Updates the placement preview or the target highlight under the mouse. */
+function refreshHover() {
+    world.fleet.hideGhost();
+    world.grid.hideHover();
+    canvas.classList.remove('targeting');
+    if (!hover) {
+        return;
+    }
+    if (isPlacing() && hover.zone === 'mine') {
+        const type = view.shipsToPlace[0];
+        const valid = fits(type, hover.row, hover.col);
+        world.fleet.showGhost({ type, row: hover.row, col: hover.col, orientation }, valid);
+        const cells = shipCells(type, hover.row, hover.col, orientation).filter(inBounds);
+        world.grid.showHover('mine', cells, valid ? HOVER_VALID : HOVER_INVALID);
+    } else if (canFire() && hover.zone === 'enemy') {
+        const free = view.opponentBoard[hover.row][hover.col] === 'EMPTY';
+        world.grid.showHover('enemy', [hover], free ? HOVER_TARGET : HOVER_INVALID);
+        canvas.classList.toggle('targeting', free);
+    }
+}
