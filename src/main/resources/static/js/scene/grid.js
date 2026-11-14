@@ -1,11 +1,17 @@
 // The two 10 x 10 grids drawn on the sea as thin glowing lines (no solid board),
 // the hit / miss markers, the hover highlight, and mouse picking by raycasting.
+//
+// The sea has real waves now, so the grid floats on them: the lines are cut
+// into short pieces and lifted by the same wave formula as the water (in the
+// vertex shader), and the markers are moved up and down from JavaScript.
 
 import * as THREE from 'three';
 import { CELL, GRID_SIZE, ROW_LABELS, ZONES, ZONE_SPAN, cellToWorld, worldToCell } from '../config.js';
 import { labelTexture } from './textures.js';
+import { WAVE_GLSL, seaUniforms, waveHeight } from './sea.js';
 
 const LINE_HEIGHT = 0.3;      // just above the water to avoid flickering
+const LINE_PIECES = 4;        // pieces per cell side, so a line can bend over the waves
 const ZONE_COLORS = { mine: 0x58d6ff, enemy: 0xffb054 };
 
 export function createGrid(scene) {
@@ -69,7 +75,7 @@ export function createGrid(scene) {
         }
         if (shown) {
             const object = buildMarker(shown);
-            cellToWorld(zone, row, col, object.position).y = LINE_HEIGHT + 0.05;
+            cellToWorld(zone, row, col, object.position);
             markerGroup.add(object);
             markers.set(key, { state: shown, object });
         }
@@ -97,7 +103,8 @@ export function createGrid(scene) {
         hoverTiles.forEach((tile, i) => {
             tile.visible = i < cells.length;
             if (tile.visible) {
-                cellToWorld(zone, cells[i].row, cells[i].col, tile.position).y = LINE_HEIGHT + 0.1;
+                cellToWorld(zone, cells[i].row, cells[i].col, tile.position);
+                tile.position.y = waveHeight(tile.position.x, tile.position.z, seaUniforms.uTime.value) + LINE_HEIGHT;
             }
         });
     }
@@ -120,7 +127,49 @@ export function createGrid(scene) {
         return worldToCell('mine', hitPoint) || worldToCell('enemy', hitPoint);
     }
 
-    return { setCellState, clearMarkers, showHover, hideHover, pick };
+    /** Keeps the markers and the hover tiles on the moving water. */
+    function update(time) {
+        for (const object of markerGroup.children) {
+            object.position.y = waveHeight(object.position.x, object.position.z, time) + LINE_HEIGHT;
+        }
+        for (const tile of hoverTiles) {
+            if (tile.visible) {
+                tile.position.y = waveHeight(tile.position.x, tile.position.z, time) + LINE_HEIGHT;
+            }
+        }
+    }
+
+    return { setCellState, clearMarkers, showHover, hideHover, pick, update };
+}
+
+// Lines that ride the waves: the vertex shader lifts every point to the
+// height of the water under it.
+const lineVertex = /* glsl */`
+    ${WAVE_GLSL}
+    void main() {
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        world.y += waveSurface(world.xz).x;
+        gl_Position = projectionMatrix * viewMatrix * world;
+    }
+`;
+const lineFragment = /* glsl */`
+    uniform vec3 uColor;
+    uniform float uOpacity;
+    void main() {
+        gl_FragColor = vec4(uColor, uOpacity);
+        #include <colorspace_fragment>
+    }
+`;
+
+/** Adds a straight line to `target`, cut into short pieces. */
+function pushLine(target, x1, z1, x2, z2) {
+    const pieces = GRID_SIZE * LINE_PIECES;
+    for (let i = 0; i < pieces; i++) {
+        const a = i / pieces;
+        const b = (i + 1) / pieces;
+        target.push(x1 + (x2 - x1) * a, LINE_HEIGHT, z1 + (z2 - z1) * a,
+            x1 + (x2 - x1) * b, LINE_HEIGHT, z1 + (z2 - z1) * b);
+    }
 }
 
 /** Thin additive lines: 11 horizontal + 11 vertical per zone, plus a brighter frame. */
@@ -132,24 +181,29 @@ function buildLines(zone) {
     for (let i = 0; i <= GRID_SIZE; i++) {
         const offset = -half + i * CELL;
         const target = i === 0 || i === GRID_SIZE ? frame : inner;
-        target.push(center.x - half, LINE_HEIGHT, center.z + offset, center.x + half, LINE_HEIGHT, center.z + offset);
-        target.push(center.x + offset, LINE_HEIGHT, center.z - half, center.x + offset, LINE_HEIGHT, center.z + half);
+        pushLine(target, center.x - half, center.z + offset, center.x + half, center.z + offset);
+        pushLine(target, center.x + offset, center.z - half, center.x + offset, center.z + half);
     }
     const group = new THREE.Group();
     const add = (positions, opacity) => {
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        const material = new THREE.LineBasicMaterial({
-            color: ZONE_COLORS[zone],
+        const material = new THREE.ShaderMaterial({
+            vertexShader: lineVertex,
+            fragmentShader: lineFragment,
+            uniforms: {
+                ...seaUniforms,
+                uColor: { value: new THREE.Color(ZONE_COLORS[zone]) },
+                uOpacity: { value: opacity }
+            },
             transparent: true,
-            opacity,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
             // The enemy grid stays readable through the fog (a tactical overlay).
-            depthTest: zone !== 'enemy',
-            fog: false
+            depthTest: zone !== 'enemy'
         });
         const lines = new THREE.LineSegments(geometry, material);
+        lines.frustumCulled = false;   // the shader moves the points
         lines.renderOrder = 4;
         group.add(lines);
     };
@@ -170,7 +224,7 @@ function buildLabels(zone) {
             depthWrite: false, depthTest: false, fog: false
         });
         const sprite = new THREE.Sprite(material);
-        sprite.position.set(x, 1, z);
+        sprite.position.set(x, 2, z);
         sprite.scale.setScalar(5.5);
         sprite.renderOrder = 4;
         group.add(sprite);

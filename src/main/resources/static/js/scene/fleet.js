@@ -9,34 +9,77 @@
 import * as THREE from 'three';
 import { CELL, SHIP_LENGTHS, ZONES, cellToWorld } from '../config.js';
 import { buildGhostModel, buildShipModel, DECK_HEIGHT } from './shipModels.js';
-import { swellAt } from './sea.js';
+import { swellAt, WAVE_GLSL, seaUniforms } from './sea.js';
 import { foamTexture, wakeMaskTexture } from './textures.js';
 
 const SINK_SECONDS = 7;
-const SINK_DEPTH = 4.6;
-const WAKE_OPACITY = 0.8;
+const SINK_DEPTH = 3.4;      // a wreck stays half out of the water, so a sunk ship can still be seen
+const WAKE_OPACITY = 0.55;
+
+// The wake is a sheet of foam that follows the waves (same formula as the sea).
+const wakeVertex = /* glsl */`
+    ${WAVE_GLSL}
+    varying vec2 vUv;
+    #include <fog_pars_vertex>
+    void main() {
+        vUv = uv;
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        world.y = waveSurface(world.xz).x + 0.12;
+        vec4 mvPosition = viewMatrix * world;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+    }
+`;
+const wakeFragment = /* glsl */`
+    uniform sampler2D uFoam;
+    uniform sampler2D uMask;
+    uniform vec2 uScroll;
+    uniform float uOpacity;
+    uniform float uFlash;
+    varying vec2 vUv;
+    #include <fog_pars_fragment>
+    void main() {
+        vec3 foam = texture2D(uFoam, vUv * vec2(2.0, 1.0) + uScroll).rgb;
+        float alpha = texture2D(uMask, vUv).r * uOpacity * (0.4 + 0.6 * foam.r);
+        // Foam is only as bright as the storm light, except during a flash.
+        gl_FragColor = vec4(foam * (0.34 + uFlash * 1.2), alpha);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+    }
+`;
 
 export function createFleet(scene) {
     const root = new THREE.Group();
     scene.add(root);
 
     const fleets = { mine: new Map(), enemy: new Map() };   // type -> entry
-    const foamMap = foamTexture();   // shared by all wakes, scrolled once per frame
-    foamMap.repeat.set(2, 1);
+    const foamMap = foamTexture();
     const wakeMask = wakeMaskTexture();
+    const foamScroll = new THREE.Vector2();   // shared by all wakes, moved once per frame
 
     function buildWake(model) {
         const length = model.userData.length;
-        const material = new THREE.MeshBasicMaterial({
-            map: foamMap,
-            alphaMap: wakeMask,
+        const material = new THREE.ShaderMaterial({
+            vertexShader: wakeVertex,
+            fragmentShader: wakeFragment,
+            uniforms: {
+                ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+                ...seaUniforms,
+                uFoam: { value: foamMap },
+                uMask: { value: wakeMask },
+                uScroll: { value: foamScroll },
+                uOpacity: { value: WAKE_OPACITY }
+            },
             transparent: true,
-            opacity: WAKE_OPACITY,
-            depthWrite: false
+            depthWrite: false,
+            fog: true
         });
-        const wake = new THREE.Mesh(new THREE.PlaneGeometry(length * 1.5, CELL * 1.7), material);
-        wake.rotation.x = -Math.PI / 2;
-        wake.position.set(-length * 0.3, 0.14, 0);   // shifted towards the stern
+        // Many small squares, so the sheet can bend over the waves.
+        const geometry = new THREE.PlaneGeometry(length * 1.5, CELL * 1.7, Math.round(length / 2), 6).rotateX(-Math.PI / 2);
+        const wake = new THREE.Mesh(geometry, material);
+        wake.position.set(-length * 0.3, 0, 0);   // shifted towards the stern
+        wake.frustumCulled = false;
         wake.renderOrder = -5;
         return wake;
     }
@@ -136,11 +179,12 @@ export function createFleet(scene) {
 
     // ---- Animation ---------------------------------------------------------
     function update(dt, time) {
-        foamMap.offset.x += dt * 0.12;   // foam drifts towards the stern
+        foamScroll.x += dt * 0.12;   // foam drifts towards the stern
         for (const zone of Object.keys(fleets)) {
             for (const entry of fleets[zone].values()) {
                 const { anchor, body, wake } = entry;
-                const swell = swellAt(anchor.position.x, anchor.position.z, time);
+                // The ship rides the swell and leans with the slope of the water.
+                const swell = swellAt(anchor.position.x, anchor.position.z, time, anchor.rotation.y);
                 if (!entry.sunk) {
                     body.position.y = swell.height;
                     body.rotation.x = swell.roll;
@@ -155,7 +199,7 @@ export function createFleet(scene) {
                 body.position.y = swell.height * afloat - SINK_DEPTH * eased;
                 body.rotation.x = swell.roll * afloat + 0.3 * eased;
                 body.rotation.z = swell.pitch * afloat + 0.16 * eased;
-                wake.material.opacity = WAKE_OPACITY * afloat;
+                wake.material.uniforms.uOpacity.value = WAKE_OPACITY * afloat;
             }
         }
     }
