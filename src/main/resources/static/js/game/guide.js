@@ -27,7 +27,7 @@ const LINES = {
         'The fleet is ready, captain! The enemy is still fumbling with their anchors.'
     ],
     battleFirst: [
-        'Battle stations! You fire first, captain. Pick a square in that cursed fog.'
+        'Battle stations! You fire first, captain. Pick a square on the holo-board and we\'ll shell that cursed fog.'
     ],
     battleSecond: [
         'Battle stations! They shoot first. Hold fast, captain!'

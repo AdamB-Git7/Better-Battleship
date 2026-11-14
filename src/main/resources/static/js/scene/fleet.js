@@ -25,17 +25,6 @@ export function createFleet(scene) {
     foamMap.repeat.set(2, 1);
     const wakeMask = wakeMaskTexture();
 
-    /** World position of the centre of a ship and its heading. */
-    function place(object, zone, layout) {
-        const length = SHIP_LENGTHS[layout.type];
-        const horizontal = layout.orientation === 'HORIZONTAL';
-        const midRow = layout.row + (horizontal ? 0 : (length - 1) / 2);
-        const midCol = layout.col + (horizontal ? (length - 1) / 2 : 0);
-        cellToWorld(zone, midRow, midCol, object.position);
-        // Models point to +X. A vertical ship points to +Z (towards higher rows).
-        object.rotation.y = horizontal ? 0 : -Math.PI / 2;
-    }
-
     function buildWake(model) {
         const length = model.userData.length;
         const material = new THREE.MeshBasicMaterial({
@@ -54,7 +43,7 @@ export function createFleet(scene) {
 
     function addShip(zone, layout) {
         const anchor = new THREE.Group();     // fixed position + heading on the grid
-        place(anchor, zone, layout);
+        placeOnGrid(anchor, zone, layout);
         const body = buildShipModel(layout.type);   // moves with the swell / sinks
         const wake = buildWake(body);
         anchor.add(body, wake);
@@ -133,7 +122,7 @@ export function createFleet(scene) {
         }
         activeGhost = ghost;
         ghost.visible = true;
-        place(ghost, 'mine', layout);
+        placeOnGrid(ghost, 'mine', layout);
         ghost.position.y = 0.4;
         ghostMaterial.color.set(valid ? 0x4dff88 : 0xff4a3d);
     }
@@ -172,6 +161,20 @@ export function createFleet(scene) {
     }
 
     return { sync, clear, update, showGhost, hideGhost, randomMuzzle };
+}
+
+/**
+ * Puts an object at the centre of the cells a ship covers, with its heading.
+ * Also used by the holographic board for its miniature ships.
+ */
+export function placeOnGrid(object, zone, layout) {
+    const length = SHIP_LENGTHS[layout.type];
+    const horizontal = layout.orientation === 'HORIZONTAL';
+    const midRow = layout.row + (horizontal ? 0 : (length - 1) / 2);
+    const midCol = layout.col + (horizontal ? (length - 1) / 2 : 0);
+    cellToWorld(zone, midRow, midCol, object.position);
+    // Models point to +X. A vertical ship points to +Z (towards higher rows).
+    object.rotation.y = horizontal ? 0 : -Math.PI / 2;
 }
 
 function layoutKey(layout) {

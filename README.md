@@ -14,6 +14,8 @@ Built in Java with Spring Boot and WebSockets, covered by 118 automated tests.
 - **3D scene**: a sea that reaches the horizon, a late-afternoon sky, ships that float and leave a wake, a tilted aerial camera you can orbit, zoom and pan
 - **Ship placement** with a live 3D preview (green if valid, red if not), rotation (button, `R` or right click), and server-side checks for edges and overlaps
 - **Turn-based firing**: a shell flies in an arc to the target; a hit explodes and burns, a miss splashes, a sunk ship goes down
+- **Captain's bridge**: once the fleets are placed, you command in first person from the bridge of your flagship. Through the large window you see your fleet ahead and the fog bank in the distance
+- **Holographic tactical board**: a glowing miniature of the battlefield floats in the bridge. Click one of its cells to fire: one of your ships (picked at random) sends a shell into the fog, and enemy shells come out of the fog at your fleet. `V` switches to the aerial view and back
 - **Pirate guide**: Rusty, the first mate, sits in the bottom-left corner and comments on the game (wake-up intro, placement tips, hits, misses, sunk ships, victory). Click him to repeat his last line, or turn him off with the `GUIDE` button
 - **Fog of war**: a fog bank covers the enemy zone and opens above each cell you shoot
 - **Server-side rules**: wrong turn, repeated shots, off-board shots and moves from outside the game are all refused
@@ -109,7 +111,9 @@ On Windows, use `mvnw.cmd spring-boot:run`. Then open **http://localhost:8080** 
 
 The browser needs WebGL (any recent Chrome, Edge, Firefox or Safari). Three.js is stored in the project (`static/vendor`), so no internet connection is needed.
 
-**Controls:** left click places a ship or fires · `R` or right click rotates the ship · drag with the left button to orbit, with the right button to pan · mouse wheel to zoom.
+**Controls**
+- Placement (aerial view): left click places a ship · `R` or right click rotates it · drag with the left button to orbit, with the right button to pan · mouse wheel to zoom
+- Battle (bridge view): left click on a cell of the holographic board fires · drag to look around · `V` switches between the bridge and the aerial view (in the aerial view you fire by clicking the sea directly)
 
 To build the runnable jar (this also runs all the tests):
 
@@ -143,7 +147,8 @@ src/main/resources/static/
 │   ├── net/network.js        STOMP WebSocket client (same protocol as the 2D game)
 │   ├── game/viewDiff.js      Finds the new shot between two server views
 │   ├── game/guide.js         The pirate guide's lines and when he says them
-│   ├── scene/                world, sky, sea, grid, shipModels, fleet, fog, effects, camera, textures
+│   ├── scene/                world, sky, sea, grid, shipModels, fleet, fog, effects, camera, textures,
+│   │                         bridge (flagship and bridge interior), holoBoard (holographic tactical board)
 │   ├── ui/                   hud.js (interface), input.js (mouse on the canvas), pirate.js (portrait and speech bubble)
 │   └── audio/sound.js        Cannon, explosion and splash, synthesised with Web Audio
 ├── assets/textures/          waternormals.jpg (wave normal map)
@@ -167,7 +172,7 @@ I built this with [Claude Code](https://claude.com/claude-code) as a development
 
 ## What I'd add next
 
-- A first-person view from the captain's bridge and a holographic tactical board
+- A big map and special powers (for example a rocket that hits several cells)
 - Real glTF ship models and recorded sound effects
 - HTTPS with a domain name
 - Continuous deployment from GitHub Actions on every push

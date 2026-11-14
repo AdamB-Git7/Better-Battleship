@@ -1,5 +1,6 @@
 // The 3D world: creates the renderer, builds every part of the scene (sky, sea,
-// grid, ships, fog, effects, camera) and runs the render loop.
+// grid, ships, fog, effects, bridge, holographic board, camera) and runs the
+// render loop.
 //
 // main.js talks to the scene only through the object returned here.
 
@@ -12,6 +13,8 @@ import { createFleet } from './fleet.js';
 import { createFog } from './fog.js';
 import { createEffects } from './effects.js';
 import { createCameraRig } from './camera.js';
+import { createBridge } from './bridge.js';
+import { createHoloBoard } from './holoBoard.js';
 import { DECK_HEIGHT } from './shipModels.js';
 
 /**
@@ -40,6 +43,8 @@ export async function createWorld(canvas, sound, onProgress) {
     const fleet = createFleet(scene);
     const fog = createFog(scene);
     const effects = createEffects(scene, sound);
+    const bridge = createBridge(scene);
+    const holo = createHoloBoard(bridge.interior);
 
     // ---- Resize ---------------------------------------------------------------
     window.addEventListener('resize', () => {
@@ -56,7 +61,9 @@ export async function createWorld(canvas, sound, onProgress) {
         fleet.update(dt, time);
         fog.update(dt, time);
         effects.update(dt);
-        rig.update(dt);
+        bridge.update(dt, time);
+        holo.update(dt, time);
+        rig.update(dt, time);
         renderer.render(scene, rig.camera);
     });
 
@@ -64,11 +71,40 @@ export async function createWorld(canvas, sound, onProgress) {
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
 
-    /** Grid cell under a mouse position (in pixels), or null. */
+    /**
+     * Grid cell under a mouse position (in pixels), or null.
+     * From the bridge the player points at the holographic board,
+     * from the air directly at the sea.
+     */
     function pickCell(clientX, clientY) {
         pointer.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
         raycaster.setFromCamera(pointer, rig.camera);
-        return grid.pick(raycaster);
+        return rig.isOnBridge() ? holo.pick(raycaster) : grid.pick(raycaster);
+    }
+
+    /** Highlights cells, both on the sea and on the holographic board. */
+    function showHover(zone, cells, color) {
+        grid.showHover(zone, cells, color);
+        holo.showHover(zone, cells, color);
+    }
+
+    function hideHover() {
+        grid.hideHover();
+        holo.hideHover();
+    }
+
+    /** Moves the player into the bridge (first person)... */
+    function enterBridge() {
+        bridge.setInside(true);
+        fog.setBridgeMode(true);
+        rig.flyTo('bridge');
+    }
+
+    /** ...or back to one of the aerial viewpoints ('placement', 'battle', 'lobby'). */
+    function leaveBridge(viewpoint) {
+        bridge.setInside(false);
+        fog.setBridgeMode(false);
+        rig.flyTo(viewpoint);
     }
 
     /**
@@ -79,6 +115,7 @@ export async function createWorld(canvas, sound, onProgress) {
     function showView(view, instant = false) {
         if (!view) {
             grid.clearMarkers();
+            holo.sync(null);
             fleet.clear();
             fog.reset();
             effects.clear();
@@ -103,10 +140,11 @@ export async function createWorld(canvas, sound, onProgress) {
             }
         }
         effects.syncFires(fires);
+        holo.sync(view);
         fleet.sync('mine', view.yourShips, instant);
         // Only sunk enemy ships are in this list: the server sends nothing else.
         fleet.sync('enemy', view.opponentShips, instant);
     }
 
-    return { showView, pickCell, grid, fleet, effects, camera: rig };
+    return { showView, pickCell, showHover, hideHover, enterBridge, leaveBridge, fleet, effects, camera: rig };
 }

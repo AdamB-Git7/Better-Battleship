@@ -163,6 +163,39 @@ export function createFog(scene) {
         });
     }
 
+    // ---- Fog wall for the bridge view -----------------------------------------
+    // Seen from the captain's bridge (low and far away) the flat layers above
+    // are almost edge-on, so the bank needs height: these taller sprites stand
+    // over the enemy zone. They are hidden in the aerial view, where they
+    // would cover the enemy grid.
+    const wall = [];
+    for (let i = 0; i < 40; i++) {
+        const material = new THREE.SpriteMaterial({
+            map: puffMap, color: 0x8c96a1, transparent: true, opacity: 0.55 + Math.random() * 0.3,
+            depthWrite: false, fog: false
+        });
+        const sprite = new THREE.Sprite(material);
+        const size = 80 + Math.random() * 70;
+        sprite.scale.set(size, size * 0.5, 1);
+        sprite.renderOrder = 2;
+        sprite.visible = false;
+        root.add(sprite);
+        wall.push({
+            sprite,
+            x: zone.x + (Math.random() - 0.5) * 260,
+            y: 5 + Math.random() * 16,
+            z: zone.z + ZONE_SPAN / 2 + 6 - Math.random() * 150,
+            phase: Math.random() * 100
+        });
+    }
+
+    /** true = first-person view from the bridge, false = aerial view. */
+    function setBridgeMode(onBridge) {
+        for (const item of wall) {
+            item.sprite.visible = onBridge;
+        }
+    }
+
     /** Opens (or closes) the fog above one cell of the enemy grid. */
     function setRevealed(row, col, revealed, instant = false) {
         const index = row * GRID_SIZE + col;
@@ -199,6 +232,10 @@ export function createFog(scene) {
         for (const layer of layers) {
             layer.material.uniforms.uTime.value = time;
         }
+        for (const item of wall) {
+            // The wall barely moves: a slow sideways drift.
+            item.sprite.position.set(item.x + Math.sin(time * 0.05 + item.phase) * 14, item.y, item.z);
+        }
         for (const puff of puffs) {
             // Drift sideways, wrap around, and fade in / out at the ends of the path.
             const travel = ((time * puff.speed + puff.phase * 10) % 300) / 300;   // 0..1
@@ -207,5 +244,5 @@ export function createFog(scene) {
         }
     }
 
-    return { setRevealed, reset, update };
+    return { setRevealed, setBridgeMode, reset, update };
 }

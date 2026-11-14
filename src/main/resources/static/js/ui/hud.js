@@ -7,13 +7,15 @@ import { FLEET_SIZE, SHIP_LENGTHS } from '../config.js';
 const byId = id => document.getElementById(id);
 
 /**
- * @param actions {{ onCreate, onJoin(code), onRotate, onRematch, onLeave, onMute, onGuide }}
+ * @param actions {{ onCreate, onJoin(code), onRotate, onRematch, onLeave, onMute, onGuide, onView }}
  */
 export function createHud(actions) {
     const el = {
         connection: byId('connection'),
         mute: byId('mute'),
         guide: byId('guide'),
+        view: byId('view'),
+        hud: byId('hud'),
         turn: byId('turn'),
         lobby: byId('lobby'),
         create: byId('create'),
@@ -53,6 +55,7 @@ export function createHud(actions) {
         el.mute.textContent = actions.onMute() ? 'SOUND OFF' : 'SOUND ON';
     });
 
+    el.view.addEventListener('click', actions.onView);
     el.guide.addEventListener('click', () => {
         el.guide.textContent = actions.onGuide() ? 'GUIDE ON' : 'GUIDE OFF';
     });
@@ -73,7 +76,7 @@ export function createHud(actions) {
         el.turn.className = `turn ${kind ?? ''}`;
     }
 
-    function statusText(view, orientation) {
+    function statusText(view, orientation, onBridge) {
         if (view.status === 'PLACING_SHIPS') {
             if (view.shipsToPlace.length > 0) {
                 const ship = view.shipsToPlace[0];
@@ -84,7 +87,10 @@ export function createHud(actions) {
             return 'Fleet in position. Waiting for your opponent to place their ships.';
         }
         if (view.status === 'IN_PROGRESS') {
-            return view.yourTurn ? 'Pick a target in the fog.' : 'Brace: the enemy is aiming…';
+            if (!view.yourTurn) {
+                return 'Brace: the enemy is aiming…';
+            }
+            return onBridge ? 'Pick a target on the holographic board.' : 'Pick a target in the fog.';
         }
         if (view.status === 'FINISHED') {
             const result = view.youWon ? 'All enemy ships are sunk.' : 'All your ships are sunk.';
@@ -126,6 +132,8 @@ export function createHud(actions) {
             el.fleets.hidden = true;
             el.banner.hidden = true;
             el.error.hidden = true;
+            el.view.hidden = true;
+            el.hud.classList.remove('on-bridge');
             el.code.value = '';
             el.notice.textContent = message ?? '';
             el.notice.hidden = !message;
@@ -144,10 +152,18 @@ export function createHud(actions) {
             }
         },
 
-        /** Redraws everything that depends on the game view. */
-        showGame(view, orientation) {
+        /**
+         * Redraws everything that depends on the game view.
+         * @param onBridge true when the player is in the first-person bridge view
+         */
+        showGame(view, orientation, onBridge) {
             el.error.hidden = true;
-            el.status.textContent = statusText(view, orientation);
+            el.status.textContent = statusText(view, orientation, onBridge);
+
+            // The view switch only exists once the battle has started.
+            el.view.hidden = view.status === 'PLACING_SHIPS';
+            el.view.textContent = onBridge ? 'AERIAL VIEW (V)' : 'BRIDGE VIEW (V)';
+            el.hud.classList.toggle('on-bridge', onBridge);
 
             const placing = view.status === 'PLACING_SHIPS' && view.shipsToPlace.length > 0;
             el.rotate.hidden = !placing;

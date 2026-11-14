@@ -2,6 +2,9 @@
 //
 //   network (STOMP)  --->  game flow (this file)  --->  3D world + HUD + pirate guide
 //
+// Ships are placed from an aerial view. The battle is fought from the captain's
+// bridge, by clicking the holographic board (the V key switches back to the aerial view).
+//
 // The server is the only source of truth. This file keeps the last view it
 // received, decides what the player is allowed to click, and plays the shot
 // animation before showing each new view.
@@ -27,6 +30,7 @@ let view = null;                // last view shown on screen
 let orientation = 'HORIZONTAL'; // direction of the ship being placed
 let hover = null;               // cell under the mouse
 let animating = false;          // a shell is in the air
+let preferBridge = true;        // battle view: captain's bridge (true) or aerial (false)
 
 const canvas = document.getElementById('scene');
 const sound = createSound();
@@ -40,7 +44,8 @@ const hud = createHud({
     onRematch: () => network.rematch(),
     onLeave: leave,
     onMute: () => sound.toggleMute(),
-    onGuide: () => pirate.toggle()
+    onGuide: () => pirate.toggle(),
+    onView: toggleBattleView
 });
 
 const network = createNetwork({
@@ -76,6 +81,8 @@ createInput(canvas, {
         hover = null;
         refreshHover();
     },
+    // Dragging looks around on the bridge (the aerial camera handles drags itself).
+    onDrag: (dx, dy) => world.camera.drag(dx, dy),
     onClick: (x, y) => {
         const cell = world.pickCell(x, y);
         if (!cell) {
@@ -91,8 +98,13 @@ createInput(canvas, {
 });
 
 document.addEventListener('keydown', event => {
-    if ((event.key === 'r' || event.key === 'R') && !hud.isTypingCode(event.target)) {
+    if (hud.isTypingCode(event.target)) {
+        return;
+    }
+    if (event.key === 'r' || event.key === 'R') {
         rotate();
+    } else if (event.key === 'v' || event.key === 'V') {
+        toggleBattleView();
     }
 });
 
@@ -123,6 +135,7 @@ async function processViews() {
             animating = true;
             refreshHover();
             hud.showShellInFlight(shot.zone === 'enemy');
+            world.camera.lookAt('window');   // on the bridge: look up and watch the shell
             await playShot(shot);
             animating = false;
             if (roomCode === null) {
@@ -169,11 +182,51 @@ function showView(newView, shot) {
     view = newView;
     // The very first view of a room is drawn without animations.
     world.showView(view, previous === null);
-    hud.showGame(view, orientation);
-    pirate.say(guide.onView(previous, view, shot));
     if (!previous || previous.status !== view.status) {
-        world.camera.flyTo(view.status === 'PLACING_SHIPS' ? 'placement' : 'battle');
+        chooseCamera();
     }
+    hud.showGame(view, orientation, onBridge());
+    pirate.say(guide.onView(previous, view, shot));
+    aimHead(shot ? 1.8 : 0.4);
+    refreshHover();
+}
+
+// ---- Camera: aerial view or captain's bridge -------------------------------------
+
+/** Ships are placed from the air; the battle is fought from the bridge (or from the air). */
+function onBridge() {
+    return view !== null && view.status !== 'PLACING_SHIPS' && preferBridge;
+}
+
+function chooseCamera() {
+    if (onBridge()) {
+        world.enterBridge();
+    } else {
+        world.leaveBridge(view.status === 'PLACING_SHIPS' ? 'placement' : 'battle');
+    }
+}
+
+/**
+ * On the bridge the captain looks down at the holographic board when it is
+ * his turn to aim, and out of the window the rest of the time.
+ * @param delay seconds to keep the current look first (to watch an impact)
+ */
+function aimHead(delay) {
+    if (onBridge()) {
+        const aiming = view.status === 'IN_PROGRESS' && view.yourTurn;
+        world.camera.lookAt(aiming ? 'board' : 'window', delay);
+    }
+}
+
+/** The VIEW button and the V key: switch between the bridge and the aerial view. */
+function toggleBattleView() {
+    if (view === null || view.status === 'PLACING_SHIPS') {
+        return;
+    }
+    preferBridge = !preferBridge;
+    chooseCamera();
+    hud.showGame(view, orientation, onBridge());
+    aimHead(0.4);
     refreshHover();
 }
 
@@ -183,7 +236,7 @@ function backToLobby(message) {
     pending.length = 0;
     animating = false;
     world.showView(null);
-    world.camera.flyTo('lobby');
+    world.leaveBridge('lobby');
     hud.showLobby(message);
     pirate.leave();
     refreshHover();
@@ -232,14 +285,14 @@ function rotate() {
         return;
     }
     orientation = orientation === 'HORIZONTAL' ? 'VERTICAL' : 'HORIZONTAL';
-    hud.showGame(view, orientation);
+    hud.showGame(view, orientation, onBridge());
     refreshHover();
 }
 
 /** Updates the placement preview or the target highlight under the mouse. */
 function refreshHover() {
     world.fleet.hideGhost();
-    world.grid.hideHover();
+    world.hideHover();
     canvas.classList.remove('targeting');
     if (!hover) {
         return;
@@ -249,10 +302,10 @@ function refreshHover() {
         const valid = fits(type, hover.row, hover.col);
         world.fleet.showGhost({ type, row: hover.row, col: hover.col, orientation }, valid);
         const cells = shipCells(type, hover.row, hover.col, orientation).filter(inBounds);
-        world.grid.showHover('mine', cells, valid ? HOVER_VALID : HOVER_INVALID);
+        world.showHover('mine', cells, valid ? HOVER_VALID : HOVER_INVALID);
     } else if (canFire() && hover.zone === 'enemy') {
         const free = view.opponentBoard[hover.row][hover.col] === 'EMPTY';
-        world.grid.showHover('enemy', [hover], free ? HOVER_TARGET : HOVER_INVALID);
+        world.showHover('enemy', [hover], free ? HOVER_TARGET : HOVER_INVALID);
         canvas.classList.toggle('targeting', free);
     }
 }

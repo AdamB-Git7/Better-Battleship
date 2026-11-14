@@ -226,6 +226,17 @@ input::placeholder { color: var(--muted); letter-spacing: 0.12em; }
     to { opacity: 1; letter-spacing: 0.3em; }
 }
 
+/* On the bridge the holographic board is at the bottom centre of the screen,
+   so the status panel moves to the bottom right corner. */
+@media (min-width: 900px) {
+    #hud.on-bridge .room {
+        left: auto;
+        right: 18px;
+        transform: none;
+        width: 340px;
+    }
+}
+
 /* ---- Pirate guide (bottom left) ---- */
 .pirate {
     position: absolute;
