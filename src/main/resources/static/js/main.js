@@ -81,8 +81,6 @@ createInput(canvas, {
         hover = null;
         refreshHover();
     },
-    // Dragging looks around on the bridge (the aerial camera handles drags itself).
-    onDrag: (dx, dy) => world.camera.drag(dx, dy),
     onClick: (x, y) => {
         const cell = world.pickCell(x, y);
         if (!cell) {
@@ -96,6 +94,13 @@ createInput(canvas, {
     },
     onRightClick: rotate
 });
+
+// On the bridge the view follows the mouse near the screen edges. This listens on
+// the whole window (not only the canvas) so the view keeps following when the
+// mouse passes over the top bar or the side panels.
+window.addEventListener('pointermove', event => world.camera.pointAt(event.clientX, event.clientY));
+document.documentElement.addEventListener('mouseleave', () => world.camera.pointAt(null));
+window.addEventListener('blur', () => world.camera.pointAt(null));
 
 document.addEventListener('keydown', event => {
     if (hud.isTypingCode(event.target)) {

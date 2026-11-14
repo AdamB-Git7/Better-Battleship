@@ -90,7 +90,9 @@ export function createHud(actions) {
             if (!view.yourTurn) {
                 return 'Brace: the enemy is aiming…';
             }
-            return onBridge ? 'Pick a target on the holographic board.' : 'Pick a target in the fog.';
+            return onBridge
+                ? 'Pick a target on the holo-board. Move the mouse to the top edge to look out.'
+                : 'Pick a target in the fog.';
         }
         if (view.status === 'FINISHED') {
             const result = view.youWon ? 'All enemy ships are sunk.' : 'All your ships are sunk.';

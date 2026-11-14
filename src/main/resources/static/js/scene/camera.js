@@ -4,8 +4,9 @@
 //    OrbitControls (limited rotation, zoom and panning), with a few named
 //    viewpoints (lobby, placement, battle).
 //  - "bridge": the first-person view of block 3. The camera stands at the
-//    captain's eye and can only look around (limited yaw and pitch). It has
-//    two preset looks: down at the holographic board, or out of the window.
+//    captain's eye. It has two preset looks: down at the holographic board,
+//    or out of the window. On top of that, the player looks around by moving
+//    the mouse towards the edges of the screen (see pointAt below).
 //
 // flyTo() moves smoothly from any viewpoint to any other one.
 
@@ -33,9 +34,24 @@ const LOOKS = {
     board: THREE.MathUtils.degToRad(-30),    // at the holographic board, to aim
     window: THREE.MathUtils.degToRad(-9)     // out of the window, to watch the shells
 };
-const MAX_YAW = 1.0;
-const MIN_PITCH = THREE.MathUtils.degToRad(-66);
-const MAX_PITCH = THREE.MathUtils.degToRad(10);
+
+// Looking around on the bridge with the mouse. The middle of the screen, where
+// the holographic board is, is a dead zone: the view only moves when the mouse
+// gets close to an edge, so aiming at a cell never moves the board.
+const EDGE = {
+    up: { start: 0.62, angle: THREE.MathUtils.degToRad(45) },      // up to 45 degrees above the board
+    down: { start: 0.8, angle: THREE.MathUtils.degToRad(10) },     // a little lower, to see the floor screens
+    side: { start: 0.62, angle: THREE.MathUtils.degToRad(32) }     // left and right, never all the way round
+};
+const MIN_PITCH = THREE.MathUtils.degToRad(-50);
+const MAX_PITCH = THREE.MathUtils.degToRad(16);   // slightly above the horizon, no higher
+const EDGE_SPEED = 3.2;                           // how fast the view follows the mouse
+
+/** 0 inside the dead zone, rising smoothly to 1 at the edge of the screen. */
+function edgeAmount(value, start) {
+    const t = THREE.MathUtils.clamp((Math.abs(value) - start) / (0.97 - start), 0, 1);
+    return t * t * (3 - 2 * t);
+}
 
 // Half a turn around the vertical axis (see flyTo).
 const FLIP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
@@ -61,16 +77,20 @@ export function createCameraRig(domElement) {
     let currentView = 'lobby';   // 'lobby' | 'placement' | 'battle' | 'bridge'
     let flight = null;           // the transition in progress, if any
 
-    // First-person look direction on the bridge.
-    const look = { yaw: 0, pitch: LOOKS.window };
-    let lookGoal = null;         // { pitch, delay } while the camera turns by itself
+    // First-person look direction on the bridge = a preset look (board or
+    // window, chosen by the game) + an extra turn from the mouse position.
+    const look = { pitch: LOOKS.window };            // the preset part, animated
+    const edgeLook = { yaw: 0, pitch: 0 };           // the mouse part, animated
+    const edgeGoal = { yaw: 0, pitch: 0 };           // where the mouse part is heading
+    let lookGoal = null;         // { pitch, delay } while the preset look changes
     const euler = new THREE.Euler(0, 0, 0, 'YXZ');
     const helper = new THREE.Object3D();
 
     function bridgeQuaternion(target, time = 0) {
         // A tiny sway, as if the ship was rolling under the captain's feet. It is
         // kept very small so the cells of the holographic board stay easy to click.
-        euler.set(look.pitch + Math.sin(time * 0.55) * 0.001, look.yaw, Math.sin(time * 0.7) * 0.002);
+        const pitch = THREE.MathUtils.clamp(look.pitch + edgeLook.pitch, MIN_PITCH, MAX_PITCH);
+        euler.set(pitch + Math.sin(time * 0.55) * 0.001, edgeLook.yaw, Math.sin(time * 0.7) * 0.002);
         return target.setFromEuler(euler);
     }
 
@@ -83,8 +103,8 @@ export function createCameraRig(domElement) {
         const toPosition = new THREE.Vector3();
         const toQuaternion = new THREE.Quaternion();
         if (name === 'bridge') {
-            look.yaw = 0;
             look.pitch = LOOKS.window;
+            edgeLook.yaw = edgeLook.pitch = 0;
             lookGoal = null;
             toPosition.copy(BRIDGE_EYE);
             bridgeQuaternion(toQuaternion);
@@ -144,14 +164,16 @@ export function createCameraRig(domElement) {
             if (lookGoal) {
                 lookGoal.delay -= dt;
                 if (lookGoal.delay <= 0) {
-                    const ease = 1 - Math.exp(-dt * 3.5);
-                    look.pitch += (lookGoal.pitch - look.pitch) * ease;
-                    look.yaw += (0 - look.yaw) * ease;
-                    if (Math.abs(lookGoal.pitch - look.pitch) < 0.002 && Math.abs(look.yaw) < 0.002) {
+                    look.pitch += (lookGoal.pitch - look.pitch) * (1 - Math.exp(-dt * 3.5));
+                    if (Math.abs(lookGoal.pitch - look.pitch) < 0.002) {
                         lookGoal = null;
                     }
                 }
             }
+            // Follow the mouse towards the edges of the screen.
+            const ease = 1 - Math.exp(-dt * EDGE_SPEED);
+            edgeLook.yaw += (edgeGoal.yaw - edgeLook.yaw) * ease;
+            edgeLook.pitch += (edgeGoal.pitch - edgeLook.pitch) * ease;
             camera.position.copy(BRIDGE_EYE);
             bridgeQuaternion(camera.quaternion, time);
             return;
@@ -178,14 +200,23 @@ export function createCameraRig(domElement) {
         lookGoal = { pitch: LOOKS[name], delay };
     }
 
-    /** On the bridge: the player drags the mouse to look around. */
-    function drag(dx, dy) {
-        if (currentView !== 'bridge' || flight) {
+    /**
+     * On the bridge: the mouse is at (x, y) pixels. Near the top edge the view
+     * turns up (to watch the battlefield), near the sides it turns left or
+     * right. In the middle of the screen nothing moves.
+     * Call with null when the mouse leaves the window: the view comes back.
+     */
+    function pointAt(x, y) {
+        if (x === null) {
+            edgeGoal.yaw = edgeGoal.pitch = 0;
             return;
         }
-        lookGoal = null;   // the player takes over
-        look.yaw = THREE.MathUtils.clamp(look.yaw + dx * 0.0016, -MAX_YAW, MAX_YAW);
-        look.pitch = THREE.MathUtils.clamp(look.pitch + dy * 0.0016, MIN_PITCH, MAX_PITCH);
+        const nx = (x / window.innerWidth) * 2 - 1;    // -1 left .. 1 right
+        const ny = 1 - (y / window.innerHeight) * 2;   // -1 bottom .. 1 top
+        edgeGoal.yaw = -Math.sign(nx) * edgeAmount(nx, EDGE.side.start) * EDGE.side.angle;
+        edgeGoal.pitch = ny > 0
+            ? edgeAmount(ny, EDGE.up.start) * EDGE.up.angle
+            : -edgeAmount(ny, EDGE.down.start) * EDGE.down.angle;
     }
 
     function resize(width, height) {
@@ -193,5 +224,5 @@ export function createCameraRig(domElement) {
         camera.updateProjectionMatrix();
     }
 
-    return { camera, flyTo, lookAt, drag, update, resize, isOnBridge: () => currentView === 'bridge' };
+    return { camera, flyTo, lookAt, pointAt, update, resize, isOnBridge: () => currentView === 'bridge' };
 }

@@ -113,7 +113,7 @@ The browser needs WebGL (any recent Chrome, Edge, Firefox or Safari). Three.js i
 
 **Controls**
 - Placement (aerial view): left click places a ship · `R` or right click rotates it · drag with the left button to orbit, with the right button to pan · mouse wheel to zoom
-- Battle (bridge view): left click on a cell of the holographic board fires · drag to look around · `V` switches between the bridge and the aerial view (in the aerial view you fire by clicking the sea directly)
+- Battle (bridge view): left click on a cell of the holographic board fires · move the mouse to the top or side edges of the screen to look out of the window (up to 45° above the board, never all the way round) · `V` switches between the bridge and the aerial view (in the aerial view you fire by clicking the sea directly)
 
 To build the runnable jar (this also runs all the tests):
 

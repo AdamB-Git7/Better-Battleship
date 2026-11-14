@@ -9,7 +9,6 @@ const CLICK_TOLERANCE = 6;   // pixels
  * @param handlers {{
  *   onMove: (x: number, y: number) => void,
  *   onLeave: () => void,
- *   onDrag: (dx: number, dy: number) => void,
  *   onClick: (x: number, y: number) => void,
  *   onRightClick: () => void
  * }}
@@ -18,7 +17,7 @@ export function createInput(canvas, handlers) {
     let press = null;
 
     canvas.addEventListener('pointerdown', event => {
-        press = { x: event.clientX, y: event.clientY, button: event.button, lastX: event.clientX, lastY: event.clientY };
+        press = { x: event.clientX, y: event.clientY, button: event.button };
     });
 
     canvas.addEventListener('pointerup', event => {
@@ -37,15 +36,7 @@ export function createInput(canvas, handlers) {
         }
     });
 
-    canvas.addEventListener('pointermove', event => {
-        if (press && event.buttons !== 0) {
-            // A button is held down: this is a drag.
-            handlers.onDrag(event.clientX - press.lastX, event.clientY - press.lastY);
-            press.lastX = event.clientX;
-            press.lastY = event.clientY;
-        }
-        handlers.onMove(event.clientX, event.clientY);
-    });
+    canvas.addEventListener('pointermove', event => handlers.onMove(event.clientX, event.clientY));
     canvas.addEventListener('pointerleave', () => handlers.onLeave());
     // Right click rotates the ship, so the browser menu must not open.
     canvas.addEventListener('contextmenu', event => event.preventDefault());
