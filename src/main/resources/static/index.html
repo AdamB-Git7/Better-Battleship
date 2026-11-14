@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Battleship</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.5.0/bundles/stomp.umd.min.js"></script>
+    <script src="ships.js" defer></script>
+    <script src="app.js" defer></script>
+</head>
+<body>
+<main>
+    <header>
+        <h1>Battleship</h1>
+        <p id="connection" class="muted">Connecting…</p>
+    </header>
+
+    <section id="lobby" class="card">
+        <button id="create" disabled>Create room</button>
+        <div class="join">
+            <input id="code" placeholder="Room code" maxlength="6" autocomplete="off">
+            <button id="join" disabled>Join</button>
+        </div>
+    </section>
+
+    <section id="room" class="card" hidden>
+        <p>Room code: <strong id="room-code"></strong> · Players: <span id="room-players"></span>/2</p>
+        <p id="status" class="status"></p>
+        <div id="placement" class="placement" hidden>
+            <button id="rotate">Rotate (R)</button>
+            <span id="orientation" class="muted"></span>
+        </div>
+        <div class="actions">
+            <button id="rematch" hidden>Rematch</button>
+            <button id="leave" class="secondary">Leave</button>
+        </div>
+    </section>
+
+    <p id="notice" class="notice" hidden></p>
+    <p id="error" class="error" hidden></p>
+
+    <section id="boards" class="boards" hidden>
+        <div class="board-panel">
+            <h2>Your fleet</h2>
+            <div id="your-board" class="board"></div>
+        </div>
+        <div class="board-panel">
+            <h2>Enemy waters</h2>
+            <div id="opponent-board" class="board"></div>
+        </div>
+    </section>
+</main>
+</body>
+</html>
