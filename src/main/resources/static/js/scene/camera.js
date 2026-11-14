@@ -90,7 +90,7 @@ export function createCameraRig(domElement) {
         // A tiny sway, as if the ship was rolling under the captain's feet. It is
         // kept very small so the cells of the holographic board stay easy to click.
         const pitch = THREE.MathUtils.clamp(look.pitch + edgeLook.pitch, MIN_PITCH, MAX_PITCH);
-        euler.set(pitch + Math.sin(time * 0.55) * 0.001, edgeLook.yaw, Math.sin(time * 0.7) * 0.002);
+        euler.set(pitch + Math.sin(time * 0.55) * 0.0015, edgeLook.yaw, Math.sin(time * 0.7) * 0.003);
         return target.setFromEuler(euler);
     }
 
