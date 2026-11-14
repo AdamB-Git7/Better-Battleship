@@ -172,10 +172,11 @@ export function createHoloBoard(parent, floorY = -3.2) {
         fin.rotation.y = -angle;
         projector.add(fin);
     }
-    // The lens: a bright disc with a ring of light around it.
+    // The lens: dark glass with a soft glow (it sits right under the middle of
+    // the board, so a bright disc would cover the cells above it).
     const lens = new THREE.Mesh(
         new THREE.CircleGeometry(0.2, 24).rotateX(-Math.PI / 2),
-        new THREE.MeshBasicMaterial({ color: 0xbfefff, fog: false }));
+        new THREE.MeshBasicMaterial({ color: 0x2c6575, transparent: true, opacity: 0.55, depthWrite: false, fog: false }));
     lens.position.y = 0.43;
     projector.add(lens);
     const ring = new THREE.Mesh(

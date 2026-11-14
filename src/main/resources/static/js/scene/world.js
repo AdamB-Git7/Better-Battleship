@@ -119,6 +119,7 @@ export async function createWorld(canvas, sound, onProgress) {
     /** Moves the player into the bridge (first person)... */
     function enterBridge() {
         bridge.setInside(true);
+        grid.setVisible(false);
         fog.setBridgeMode(true);
         storm.setRoom(bridge.roomBox, bridge.roofPlane);   // no rain inside the bridge
         sound.setPlace('bridge');
@@ -128,6 +129,7 @@ export async function createWorld(canvas, sound, onProgress) {
     /** ...or back to one of the aerial viewpoints ('placement', 'battle', 'lobby'). */
     function leaveBridge(viewpoint) {
         bridge.setInside(false);
+        grid.setVisible(true);
         // The tall mist is hidden in the aerial views of a game (it would cover
         // the enemy grid) but kept behind the menu, where it gives the bank volume.
         fog.setBridgeMode(viewpoint === 'lobby');

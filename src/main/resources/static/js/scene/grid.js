@@ -139,7 +139,17 @@ export function createGrid(scene) {
         }
     }
 
-    return { setCellState, clearMarkers, showHover, hideHover, pick, update };
+    /**
+     * Shows or hides the grids drawn on the sea. On the bridge they are hidden:
+     * the holographic board shows the same information, and lines, letters and
+     * markers floating over the real sea (drawn on top of everything) would
+     * clutter the view through the window.
+     */
+    function setVisible(visible) {
+        root.visible = visible;
+    }
+
+    return { setCellState, clearMarkers, showHover, hideHover, pick, update, setVisible };
 }
 
 // Lines that ride the waves: the vertex shader lifts every point to the
