@@ -7,12 +7,13 @@ import { FLEET_SIZE, SHIP_LENGTHS } from '../config.js';
 const byId = id => document.getElementById(id);
 
 /**
- * @param actions {{ onCreate, onJoin(code), onRotate, onRematch, onLeave, onMute }}
+ * @param actions {{ onCreate, onJoin(code), onRotate, onRematch, onLeave, onMute, onGuide }}
  */
 export function createHud(actions) {
     const el = {
         connection: byId('connection'),
         mute: byId('mute'),
+        guide: byId('guide'),
         turn: byId('turn'),
         lobby: byId('lobby'),
         create: byId('create'),
@@ -50,6 +51,10 @@ export function createHud(actions) {
     el.leave.addEventListener('click', actions.onLeave);
     el.mute.addEventListener('click', () => {
         el.mute.textContent = actions.onMute() ? 'SOUND OFF' : 'SOUND ON';
+    });
+
+    el.guide.addEventListener('click', () => {
+        el.guide.textContent = actions.onGuide() ? 'GUIDE ON' : 'GUIDE OFF';
     });
 
     function setPips(container, counter, afloat) {

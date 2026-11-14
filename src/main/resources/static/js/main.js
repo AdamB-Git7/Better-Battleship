@@ -1,6 +1,6 @@
 // Entry point: connects the three parts of the front end.
 //
-//   network (STOMP)  --->  game flow (this file)  --->  3D world + HUD
+//   network (STOMP)  --->  game flow (this file)  --->  3D world + HUD + pirate guide
 //
 // The server is the only source of truth. This file keeps the last view it
 // received, decides what the player is allowed to click, and plays the shot
@@ -9,11 +9,13 @@
 import { cellToWorld, inBounds, shipCells, ZONES, ZONE_SPAN } from './config.js';
 import { createNetwork } from './net/network.js';
 import { findNewShot } from './game/viewDiff.js';
+import { createGuide } from './game/guide.js';
 import { createSound } from './audio/sound.js';
 import { createWorld } from './scene/world.js';
 import { DECK_HEIGHT } from './scene/shipModels.js';
 import { createHud } from './ui/hud.js';
 import { createInput } from './ui/input.js';
+import { createPirate } from './ui/pirate.js';
 
 const HOVER_VALID = 0x4dff88;
 const HOVER_INVALID = 0xff4a3d;
@@ -28,6 +30,8 @@ let animating = false;          // a shell is in the air
 
 const canvas = document.getElementById('scene');
 const sound = createSound();
+const guide = createGuide();          // chooses what the pirate says
+const pirate = createPirate(sound);   // shows it on screen
 
 const hud = createHud({
     onCreate: () => network.createRoom(),
@@ -35,7 +39,8 @@ const hud = createHud({
     onRotate: rotate,
     onRematch: () => network.rematch(),
     onLeave: leave,
-    onMute: () => sound.toggleMute()
+    onMute: () => sound.toggleMute(),
+    onGuide: () => pirate.toggle()
 });
 
 const network = createNetwork({
@@ -43,6 +48,8 @@ const network = createNetwork({
     onRoom: room => {
         roomCode = room.code;
         hud.showRoom(room);
+        pirate.enter();
+        pirate.say(guide.onRoom(room));
     },
     onGame: receiveView,
     onError: message => hud.showError(message),
@@ -122,7 +129,7 @@ async function processViews() {
                 break;   // the player left while the shell was flying
             }
         }
-        showView(next);
+        showView(next, shot);
     }
     processing = false;
 }
@@ -157,12 +164,13 @@ function playShot(shot) {
     });
 }
 
-function showView(newView) {
+function showView(newView, shot) {
     const previous = view;
     view = newView;
     // The very first view of a room is drawn without animations.
     world.showView(view, previous === null);
     hud.showGame(view, orientation);
+    pirate.say(guide.onView(previous, view, shot));
     if (!previous || previous.status !== view.status) {
         world.camera.flyTo(view.status === 'PLACING_SHIPS' ? 'placement' : 'battle');
     }
@@ -177,6 +185,7 @@ function backToLobby(message) {
     world.showView(null);
     world.camera.flyTo('lobby');
     hud.showLobby(message);
+    pirate.leave();
     refreshHover();
 }
 

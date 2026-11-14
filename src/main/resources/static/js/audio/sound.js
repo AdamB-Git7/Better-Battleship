@@ -77,6 +77,20 @@ export function createSound() {
             if (!ready()) return;
             noise({ duration: 0.9, volume: 0.35, type: 'bandpass', from: 2600, to: 700 });
         },
+        /** Tiny blip played while the pirate's text is typed. */
+        talk() {
+            if (!ready()) return;
+            const osc = context.createOscillator();
+            osc.type = 'square';
+            osc.frequency.value = 170 + Math.random() * 70;
+            const gain = context.createGain();
+            const now = context.currentTime;
+            gain.gain.setValueAtTime(0.035, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+            osc.connect(gain).connect(context.destination);
+            osc.start(now);
+            osc.stop(now + 0.05);
+        },
         /** @returns {boolean} the new muted state */
         toggleMute() {
             muted = !muted;

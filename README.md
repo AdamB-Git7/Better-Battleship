@@ -14,6 +14,7 @@ Built in Java with Spring Boot and WebSockets, covered by 118 automated tests.
 - **3D scene**: a sea that reaches the horizon, a late-afternoon sky, ships that float and leave a wake, a tilted aerial camera you can orbit, zoom and pan
 - **Ship placement** with a live 3D preview (green if valid, red if not), rotation (button, `R` or right click), and server-side checks for edges and overlaps
 - **Turn-based firing**: a shell flies in an arc to the target; a hit explodes and burns, a miss splashes, a sunk ship goes down
+- **Pirate guide**: Rusty, the first mate, sits in the bottom-left corner and comments on the game (wake-up intro, placement tips, hits, misses, sunk ships, victory). Click him to repeat his last line, or turn him off with the `GUIDE` button
 - **Fog of war**: a fog bank covers the enemy zone and opens above each cell you shoot
 - **Server-side rules**: wrong turn, repeated shots, off-board shots and moves from outside the game are all refused
 - **Win detection**, then **rematch** (both players must agree) or **leave** (the opponent is told and returned to the menu; closing the tab counts as leaving)
@@ -141,8 +142,9 @@ src/main/resources/static/
 │   ├── config.js             Grid size, ship lengths, (row, col) <-> world coordinates
 │   ├── net/network.js        STOMP WebSocket client (same protocol as the 2D game)
 │   ├── game/viewDiff.js      Finds the new shot between two server views
+│   ├── game/guide.js         The pirate guide's lines and when he says them
 │   ├── scene/                world, sky, sea, grid, shipModels, fleet, fog, effects, camera, textures
-│   ├── ui/                   hud.js (interface), input.js (mouse on the canvas)
+│   ├── ui/                   hud.js (interface), input.js (mouse on the canvas), pirate.js (portrait and speech bubble)
 │   └── audio/sound.js        Cannon, explosion and splash, synthesised with Web Audio
 ├── assets/textures/          waternormals.jpg (wave normal map)
 └── vendor/                   three.js r170 (+ Water, Sky, OrbitControls), stomp.js
@@ -165,7 +167,7 @@ I built this with [Claude Code](https://claude.com/claude-code) as a development
 
 ## What I'd add next
 
-- A pirate guide, a first-person view from the captain's bridge and a holographic tactical board
+- A first-person view from the captain's bridge and a holographic tactical board
 - Real glTF ship models and recorded sound effects
 - HTTPS with a domain name
 - Continuous deployment from GitHub Actions on every push
