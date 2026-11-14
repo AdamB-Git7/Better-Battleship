@@ -1,12 +1,13 @@
-// The 3D world: creates the renderer, builds every part of the scene (sky, sea,
-// grid, ships, fog, effects, bridge, holographic board, camera) and runs the
-// render loop.
+// The 3D world: creates the renderer, builds every part of the scene (storm,
+// sea, grid, ships, fog, effects, bridge, holographic board, camera) and runs
+// the render loop.
 //
 // main.js talks to the scene only through the object returned here.
 
 import * as THREE from 'three';
 import { cellToWorld, GRID_SIZE } from '../config.js';
-import { createSky } from './sky.js';
+import { createStorm } from './storm.js';
+import { weather } from './weather.js';
 import { createSea } from './sea.js';
 import { createGrid } from './grid.js';
 import { createFleet } from './fleet.js';
@@ -27,7 +28,7 @@ export async function createWorld(canvas, sound, onProgress) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));   // cap for performance
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.55;
+    renderer.toneMappingExposure = 1.0;
 
     // ---- Assets -------------------------------------------------------------
     const manager = new THREE.LoadingManager();
@@ -37,35 +38,52 @@ export async function createWorld(canvas, sound, onProgress) {
     // ---- Scene ----------------------------------------------------------------
     const scene = new THREE.Scene();
     const rig = createCameraRig(canvas);
-    const { sunDirection } = createSky(scene, renderer);
-    const sea = createSea(scene, waterNormals, sunDirection);
+    const storm = createStorm(scene, renderer, sound);
+    const sea = createSea(scene, waterNormals);
     const grid = createGrid(scene);
     const fleet = createFleet(scene);
     const fog = createFog(scene);
-    const effects = createEffects(scene, sound);
+    const effects = createEffects(scene, sound, sea);
     const bridge = createBridge(scene);
-    const holo = createHoloBoard(bridge.interior);
+    const holo = createHoloBoard(bridge.interior, bridge.floorY);
+    fog.setBridgeMode(true);   // the game starts behind the menu
 
     // ---- Resize ---------------------------------------------------------------
-    window.addEventListener('resize', () => {
+    function resize() {
         renderer.setSize(window.innerWidth, window.innerHeight);
         rig.resize(window.innerWidth, window.innerHeight);
-    });
+        effects.resize(renderer.domElement.height);
+    }
+    window.addEventListener('resize', resize);
+    resize();
 
     // ---- Render loop ------------------------------------------------------------
     const clock = new THREE.Clock();
-    renderer.setAnimationLoop(() => {
-        const dt = Math.min(clock.getDelta(), 0.1);   // avoid huge jumps after a pause
-        const time = clock.elapsedTime;
-        sea.update(dt);
+    // One frame. The order matters: the storm first (it decides the wind and
+    // the lightning of this frame), then everything that reacts to it.
+    let time = 0;
+    function frame(forcedDt) {
+        const dt = forcedDt ?? Math.min(clock.getDelta(), 0.1);   // avoid huge jumps after a pause
+        time += dt;
+        storm.update(dt, time, rig.camera);
+        sound.setGust(weather.gust);
+        sea.update(time);
+        grid.update(time);
         fleet.update(dt, time);
         fog.update(dt, time);
-        effects.update(dt);
+        effects.update(dt, time, rig.camera);
         bridge.update(dt, time);
         holo.update(dt, time);
         rig.update(dt, time);
         renderer.render(scene, rig.camera);
-    });
+    }
+    renderer.setAnimationLoop(() => frame());
+
+    // Developer hook: open the page with ?debug to step and time frames from
+    // the console (used to measure performance). It exposes nothing about the game.
+    if (new URLSearchParams(location.search).has('debug')) {
+        window.__bb = { renderer, scene, rig, frame, weather, storm };
+    }
 
     // ---- Mouse picking -----------------------------------------------------------
     const raycaster = new THREE.Raycaster();
@@ -102,13 +120,19 @@ export async function createWorld(canvas, sound, onProgress) {
     function enterBridge() {
         bridge.setInside(true);
         fog.setBridgeMode(true);
+        storm.setRoom(bridge.roomBox, bridge.roofPlane);   // no rain inside the bridge
+        sound.setPlace('bridge');
         rig.flyTo('bridge');
     }
 
     /** ...or back to one of the aerial viewpoints ('placement', 'battle', 'lobby'). */
     function leaveBridge(viewpoint) {
         bridge.setInside(false);
-        fog.setBridgeMode(false);
+        // The tall mist is hidden in the aerial views of a game (it would cover
+        // the enemy grid) but kept behind the menu, where it gives the bank volume.
+        fog.setBridgeMode(viewpoint === 'lobby');
+        storm.setRoom(null);
+        sound.setPlace(viewpoint === 'lobby' ? 'lobby' : 'aerial');
         rig.flyTo(viewpoint);
     }
 
@@ -140,7 +164,7 @@ export async function createWorld(canvas, sound, onProgress) {
                     fires.push({ key: `mine:${row}:${col}`, position: cellToWorld('mine', row, col).setY(DECK_HEIGHT + 0.6) });
                 }
                 if (theirs === 'HIT') {
-                    fires.push({ key: `enemy:${row}:${col}`, position: cellToWorld('enemy', row, col).setY(1) });
+                    fires.push({ key: `enemy:${row}:${col}`, position: cellToWorld('enemy', row, col).setY(1.6) });
                 }
             }
         }
