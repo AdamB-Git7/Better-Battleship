@@ -1,9 +1,10 @@
 // The planes of the battle in the background.
 //
 // - Strike flights: three planes in a "V" come in from behind the player,
-//   pass high beside his fleet (or far out on a flank), dive on a ship of the
-//   distant enemy squadrons, drop their bombs, and climb away into the haze.
-//   A while later they come back for another run.
+//   pass beside his fleet (or far out on a flank, or now and then high over
+//   his bridge and the whole battlefield), dive on a ship of the distant enemy
+//   squadrons, drop their bombs, and climb away into the haze. A while later
+//   they come back for another run.
 // - One patrol of four planes circles the whole battlefield, well outside the
 //   play area.
 // - Near the enemy ships the sky fills with flak (dark puffs with a spark) and
@@ -13,10 +14,11 @@
 // All planes are drawn with ONE instanced mesh (plus one for the propeller
 // discs): two draw calls for the whole air force.
 //
-// Readability: planes only ever cross the play area high up and beside the
-// grids, never over them, and bombs are only released on a background ship
-// (all of them are far away from the play area). Planes are only shot down far
-// from the play area, so nothing ever falls into it.
+// Readability: over the play area the planes are always high up and only
+// passing through (most of them beside the grids, not over them). They only
+// dive, and only release bombs, on a background ship (all of those are far
+// away from the play area), and they are only shot down far from the play
+// area, so nothing ever falls into it.
 
 import * as THREE from 'three';
 import { planeModel, distantMaterial } from './distantModels.js';
@@ -27,7 +29,8 @@ const FLIGHT_SIZE = 3;
 const PATROL_SIZE = 4;
 const SPEED = 62;               // world units per second
 const TURN_RATE = 0.45;         // radians per second
-const CRUISE_HEIGHT = 78;       // on the way in, beside the player's fleet
+const CRUISE_HEIGHT = 66;       // on the way in, beside the player's fleet
+const OVERHEAD_HEIGHT = 96;     // on the way in, when the flight passes right over the battlefield
 const ATTACK_HEIGHT = 40;       // at the bottom of the dive
 const DIVE_DISTANCE = 380;      // start going down this far from the target
 const RELEASE_DISTANCE = 115;   // bombs keep the speed of the plane: they are let go early
@@ -162,13 +165,19 @@ export function createAircraft(scene, fx, fleet, sound) {
         }
         // Stay on the side of the target, so the flight never crosses over the grids.
         const side = Math.abs(target.x) > 60 ? Math.sign(target.x) : (Math.random() < 0.5 ? -1 : 1);
-        const wide = Math.random() < 0.4;            // some come in far out on the flank
-        flight.lane = side * (wide ? 330 + Math.random() * 150 : 84 + Math.random() * 34);
+        const route = Math.random();
+        if (route < 0.25) {
+            flight.lane = (Math.random() - 0.5) * 50;           // right over the bridge, high up
+        } else if (route < 0.6) {
+            flight.lane = side * (330 + Math.random() * 150);   // far out on the flank
+        } else {
+            flight.lane = side * (70 + Math.random() * 40);     // beside the player's fleet
+        }
         flight.active = true;
         flight.target = target;
         flight.stage = 0;
         flight.x = flight.lane + (Math.random() - 0.5) * 60;
-        flight.y = CRUISE_HEIGHT + Math.random() * 22;
+        flight.y = (Math.abs(flight.lane) < 60 ? OVERHEAD_HEIGHT : CRUISE_HEIGHT) + Math.random() * 18;
         flight.z = 1050 + Math.random() * 250;
         flight.heading = Math.PI / 2;
         flight.pitch = flight.roll = 0;
@@ -386,5 +395,5 @@ export function createAircraft(scene, fx, fleet, sound) {
         sound.setEngine(level, 1 + THREE.MathUtils.clamp(closing / 340, -0.2, 0.2) * 1.4);
     }
 
-    return { update };
+    return { update, flights };
 }

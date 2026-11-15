@@ -14,8 +14,9 @@ Built in Java with Spring Boot and WebSockets, covered by 118 automated tests.
 - **3D scene in a thunderstorm**: heavy moving storm clouds, wind-slanted rain, a dark sea with real waves, whitecaps and wind streaks, ships that ride the swell, a tilted aerial camera you can orbit, zoom and pan
 - **Lightning and thunder**: every 6 to 15 seconds a branching bolt strikes in the distance and lights the clouds, the sea, the ships, the fog and the bridge for a few frames; the thunder arrives later, depending on the distance (a crack when close, a long rumble when far). Flashes are short and never pure white, and become one soft glow if your system asks for reduced motion
 - **A reactive world**: one wind drives everything together: gusts slant the rain, raise the chop, roll the ships, bend the flames, carry the smoke and make the wind howl in the sound
+- **A battle all around you**: the sea and the sky beyond the play area are never empty. Squadrons of warships steam in line to the west, to the east and far behind the fog bank, and shell each other: gun flashes that light the haze, tracers arcing across, water columns, hits, fires with tall smoke carried by the wind; a ship that has taken too much falls out of line and sinks, leaving burning oil, and a new one later arrives out of the haze. Flights of propeller planes pass beside (and sometimes high over) your fleet, dive on the distant ships and drop bombs through flak bursts and anti-aircraft tracers, and now and then one is shot down. Escorts hold station beside your zone, searchlights sweep the clouds, star shells drift down, wrecks burn on the horizon. It is pure decoration: it stays out of the two zones, the water between them and the enemy fog, it knows nothing about the game (so it cannot hint at where ships are), its flashes are soft, spaced out and toned down further with reduced motion, and it costs about 30 draw calls
 - **Warships built in code**: lofted hulls (flared bow, red anti-fouling paint, waterline band), weathered paint, turrets with barrels, masts with radar, funnels, lifeboats, railings, hull numbers, a carrier with an angled flight deck and parked aircraft, a submarine with sail and dive planes
-- **Sound design** (all synthesised, no audio files): rain, gusting wind and waves as a continuous ambience (muffled inside the bridge with rain drumming on the roof, open in the aerial view, with a crossfade), thunder, and heavier guns, explosions and splashes that get quieter with distance. `SOUND ON/OFF` mutes everything
+- **Sound design** (all synthesised, no audio files): rain, gusting wind and waves as a continuous ambience (muffled inside the bridge with rain drumming on the roof, open in the aerial view, with a crossfade), thunder, and heavier guns, explosions and splashes that get quieter with distance. The background battle is heard too, but kept low: the rumble of distant guns arriving after their flash, flak pops, and the drone of the planes that swells as they pass (with a Doppler shift). `SOUND ON/OFF` mutes everything
 - **Ship placement** with a live 3D preview (green if valid, red if not), rotation (button, `R` or right click), and server-side checks for edges and overlaps
 - **Turn-based firing**: a shell flies in an arc to the target; a hit explodes and burns (fires light the ships and the water around them), a miss throws up a column of water, a sunk ship goes down and leaves a wreck
 - **Captain's bridge**: once the fleets are placed, you command in first person from the bridge of your flagship. The bridge is a dark steel room with red night lighting, instrument screens, rain running down the glass, and windows that continue into the roof: you see your own gun turrets, your fleet ahead, the storm above and the fog bank in the distance
@@ -154,9 +155,14 @@ src/main/resources/static/
 │   ├── scene/                world (builds everything, render loop), camera, grid, fleet, fog, effects, textures,
 │   │                         storm (sky dome, lightning, rain, light), weather (wind and flash shared by all),
 │   │                         sea (wave formula in GLSL and JS, sea shader), shipModels (ships generated in code),
-│   │                         bridge (flagship and bridge interior), holoBoard (holographic tactical board)
+│   │                         bridge (flagship and bridge interior), holoBoard (holographic tactical board),
+│   │                         particles (the particle pool, one draw call), and the battle in the background:
+│   │                         battlefield (entry point), battleFx (far-away flashes, fires, flak; keep-out box and
+│   │                         flash limiter), backgroundFleet (squadrons, escorts, wrecks, searchlights, flares),
+│   │                         aircraft (strike flights, patrol, bombs), distantModels (one-piece ships and planes)
 │   ├── ui/                   hud.js (interface), input.js (mouse on the canvas), pirate.js (portrait and speech bubble)
-│   └── audio/sound.js        Storm ambience, thunder, cannon, explosion and splash, synthesised with Web Audio
+│   └── audio/sound.js        Storm ambience, thunder, cannon, explosion, splash, and the distant battle (guns, flak,
+│                             plane engines), synthesised with Web Audio
 ├── assets/textures/          waternormals.jpg (wave normal map)
 └── vendor/                   three.js r170 (+ OrbitControls), stomp.js
 src/test/java/...            unit and integration tests

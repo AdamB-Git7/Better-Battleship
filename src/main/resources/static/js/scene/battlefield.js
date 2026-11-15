@@ -42,6 +42,9 @@ export function createBattlefield(scene, sound, sea) {
         /** The particles need the height of the canvas (in real pixels) to keep their size. */
         resize(pixelHeight) {
             fx.resize(pixelHeight);
-        }
+        },
+        // For the ?debug hook only (to jump to a plane or a ship when testing).
+        fleet,
+        aircraft
     };
 }

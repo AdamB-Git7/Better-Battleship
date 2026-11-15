@@ -15,8 +15,24 @@ import { buildShipModel } from './shipModels.js';
 const HULL_GREY = new THREE.Color(0x565e66);
 const HULL_RED = new THREE.Color(0x4a211c);     // anti-fouling paint below the waterline
 
-/** The one material shared by every background ship and plane. */
+/** The material shared by the escorts, the wrecks and the planes. */
 export const distantMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.25 });
+
+/**
+ * The same, much darker, for the squadrons on the horizon. A grey ship in grey
+ * haze disappears; a dark one stays a clear silhouette (and lightning still
+ * lights it up for an instant).
+ */
+export const silhouetteMaterial = new THREE.MeshStandardMaterial({
+    vertexColors: true, color: 0x5d646b, roughness: 0.8, metalness: 0.1
+});
+// The haze also swallows these ships a little later than it swallows the sea
+// (as if they were at 60 % of their real distance): artistic licence, so the
+// far squadrons can be made out from the bridge.
+silhouetteMaterial.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader.replace(
+        '#include <fog_vertex>', '#include <fog_vertex>\n\tvFogDepth *= 0.6;');
+};
 
 /**
  * Joins geometries (non-indexed, with position and normal) into one, giving

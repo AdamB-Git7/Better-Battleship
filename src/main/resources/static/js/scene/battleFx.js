@@ -116,9 +116,9 @@ export function createBattleFx(scene, sound, sea) {
      * A shell in flight: call every frame with its position. The glowing dots
      * left behind fade quickly, which draws a short streak (a tracer).
      */
-    function tracer(x, y, z) {
+    function tracer(x, y, z, size = 1) {
         spawn({ position: at.set(x, y, z), velocity: zero, life: 0.16,
-            size: [3.2, 1.2], color: 0xffc27a, opacity: 0.8, additive: true });
+            size: [3.4 * size, 1.3 * size], color: 0xffc27a, opacity: 0.8, additive: true });
     }
 
     /** One anti-aircraft tracer round, flying on its own (vx, vy, vz in units per second). */

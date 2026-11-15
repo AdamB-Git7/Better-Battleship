@@ -87,7 +87,7 @@ export async function createWorld(canvas, sound, onProgress) {
     // Developer hook: open the page with ?debug to step and time frames from
     // the console (used to measure performance). It exposes nothing about the game.
     if (new URLSearchParams(location.search).has('debug')) {
-        window.__bb = { renderer, scene, rig, frame, weather, storm };
+        window.__bb = { renderer, scene, rig, frame, weather, storm, battlefield };
     }
 
     // ---- Mouse picking -----------------------------------------------------------

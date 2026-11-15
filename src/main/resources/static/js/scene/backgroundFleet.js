@@ -18,7 +18,7 @@
 // decoration, and no background ship ever sails in or near the enemy fog.
 
 import * as THREE from 'three';
-import { distantShip, distantMaterial } from './distantModels.js';
+import { distantShip, distantMaterial, silhouetteMaterial } from './distantModels.js';
 import { createFire, reducedMotion } from './battleFx.js';
 import { swellAt, WAVE_GLSL, seaUniforms } from './sea.js';
 import { foamTexture, wakeMaskTexture } from './textures.js';
@@ -32,12 +32,12 @@ import { weather, WIND } from './weather.js';
 // half-depth rz along z), which way round, how big its ships are drawn (far
 // ones are enlarged a little so they still read in the haze) and its enemy.
 const GROUPS = [
-    { centre: [-340, -150], rx: 80, rz: 200, turn: 1, scale: 1.1, far: false, foe: 1, types: ['CRUISER', 'BATTLESHIP', 'DESTROYER'] },
-    { centre: [-640, -220], rx: 90, rz: 230, turn: -1, scale: 1.4, far: true, foe: 0, types: ['BATTLESHIP', 'CRUISER', 'DESTROYER'] },
-    { centre: [340, -150], rx: 80, rz: 200, turn: -1, scale: 1.1, far: false, foe: 3, types: ['BATTLESHIP', 'DESTROYER', 'CRUISER'] },
-    { centre: [640, -220], rx: 90, rz: 230, turn: 1, scale: 1.4, far: true, foe: 2, types: ['CRUISER', 'BATTLESHIP', 'DESTROYER'] },
-    { centre: [0, -440], rx: 250, rz: 80, turn: 1, scale: 1.2, far: false, foe: 5, types: ['CRUISER', 'DESTROYER', 'BATTLESHIP', 'DESTROYER'] },
-    { centre: [0, -700], rx: 330, rz: 80, turn: -1, scale: 1.5, far: true, foe: 4, types: ['BATTLESHIP', 'CARRIER', 'CRUISER', 'DESTROYER'] }
+    { centre: [-310, -190], rx: 62, rz: 190, turn: 1, scale: 1.15, far: false, foe: 1, types: ['CRUISER', 'BATTLESHIP', 'DESTROYER'] },
+    { centre: [-575, -300], rx: 85, rz: 220, turn: -1, scale: 1.7, far: true, foe: 0, types: ['BATTLESHIP', 'CRUISER', 'DESTROYER'] },
+    { centre: [310, -190], rx: 62, rz: 190, turn: -1, scale: 1.15, far: false, foe: 3, types: ['BATTLESHIP', 'DESTROYER', 'CRUISER'] },
+    { centre: [575, -300], rx: 85, rz: 220, turn: 1, scale: 1.7, far: true, foe: 2, types: ['CRUISER', 'BATTLESHIP', 'DESTROYER'] },
+    { centre: [0, -395], rx: 185, rz: 70, turn: 1, scale: 1.5, far: false, foe: 5, types: ['CRUISER', 'DESTROYER', 'BATTLESHIP'] },
+    { centre: [0, -640], rx: 330, rz: 80, turn: -1, scale: 1.9, far: true, foe: 4, types: ['BATTLESHIP', 'CARRIER', 'CRUISER', 'DESTROYER'] }
 ];
 
 // Escorts of the player's own task force: they hold station beside his zone,
@@ -51,9 +51,9 @@ const ESCORTS = [
 
 // Ships lost before the player arrived: half-sunk hulks that still burn.
 const WRECKS = [
-    { type: 'DESTROYER', x: -505, z: 30, heading: 0.9, scale: 1.3 },
-    { type: 'CRUISER', x: 470, z: -330, heading: 2.4, scale: 1.3 },
-    { type: 'DESTROYER', x: 150, z: -575, heading: -0.5, scale: 1.4 }
+    { type: 'DESTROYER', x: -440, z: 20, heading: 0.9, scale: 1.3 },
+    { type: 'CRUISER', x: 425, z: -250, heading: 2.4, scale: 1.4 },
+    { type: 'DESTROYER', x: -130, z: -520, heading: -0.5, scale: 1.6 }
 ];
 
 const SPEED = 4.5;             // world units per second along the track
@@ -165,9 +165,9 @@ export function createBackgroundFleet(scene, fx) {
         return { ...settings, cx, cz, outX: cx / away, outZ: cz / away, ships: [] };
     });
 
-    function addShip(type, scale) {
+    function addShip(type, scale, material) {
         const { geometry, length } = distantShip(type);
-        const mesh = new THREE.Mesh(geometry, distantMaterial);
+        const mesh = new THREE.Mesh(geometry, material);
         mesh.rotation.order = 'YXZ';   // heading first, then roll and pitch (like the player's fleet)
         mesh.scale.setScalar(scale);
         root.add(mesh);
@@ -192,7 +192,7 @@ export function createBackgroundFleet(scene, fx) {
         const step = SPACING / ((group.rx + group.rz) / 2);
         const start = Math.random() * Math.PI * 2;
         group.types.forEach((type, index) => {
-            const ship = addShip(type, group.scale);
+            const ship = addShip(type, group.scale, silhouetteMaterial);
             ship.theta = start - group.turn * step * index;
             group.ships.push(ship);
         });
@@ -205,7 +205,7 @@ export function createBackgroundFleet(scene, fx) {
     groups[5].ships[0].health = 2;
 
     const escorts = ESCORTS.map(escort => {
-        const ship = addShip(escort.type, 1);
+        const ship = addShip(escort.type, 1, distantMaterial);
         ship.x = escort.x;
         ship.z = escort.z;
         ship.heading = Math.PI / 2;   // bow to the north, where the enemy is
@@ -213,7 +213,7 @@ export function createBackgroundFleet(scene, fx) {
     });
 
     const wrecks = WRECKS.map(wreck => {
-        const mesh = new THREE.Mesh(distantShip(wreck.type).geometry, distantMaterial);
+        const mesh = new THREE.Mesh(distantShip(wreck.type).geometry, silhouetteMaterial);
         mesh.rotation.order = 'YXZ';
         mesh.rotation.set(0.5, wreck.heading, 0.14);
         mesh.scale.setScalar(wreck.scale);
@@ -422,7 +422,7 @@ export function createBackgroundFleet(scene, fx) {
             fx.tracer(
                 shell.fromX + (target.x - shell.fromX) * p,
                 shell.fromY + (3 - shell.fromY) * p + 4 * shell.height * p * (1 - p),   // parabola
-                shell.fromZ + (target.z - shell.fromZ) * p);
+                shell.fromZ + (target.z - shell.fromZ) * p, target.scale);
             if (p >= 1) {
                 shell.active = false;
                 strike(target, HIT_CHANCE);
@@ -609,5 +609,5 @@ export function createBackgroundFleet(scene, fx) {
         return best;
     }
 
-    return { update, pickTarget, strike, nearestFarShip, nearestDistance: () => nearestDistance, isInAction: inAction };
+    return { update, pickTarget, strike, nearestFarShip, nearestDistance: () => nearestDistance, isInAction: inAction, groups };
 }
