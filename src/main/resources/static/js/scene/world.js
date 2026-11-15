@@ -1,5 +1,5 @@
 // The 3D world: creates the renderer, builds every part of the scene (storm,
-// sea, grid, ships, fog, effects, the battle in the background, bridge,
+// sea, grid, ships and their sinking, fog, effects, the battle in the background, bridge,
 // holographic board, camera) and runs
 // the render loop.
 //
@@ -14,6 +14,7 @@ import { createGrid } from './grid.js';
 import { createFleet } from './fleet.js';
 import { createFog } from './fog.js';
 import { createEffects } from './effects.js';
+import { createSinking } from './sinking.js';
 import { createBattlefield } from './battlefield.js';
 import { createCameraRig } from './camera.js';
 import { createBridge } from './bridge.js';
@@ -43,9 +44,10 @@ export async function createWorld(canvas, sound, onProgress) {
     const storm = createStorm(scene, renderer, sound);
     const sea = createSea(scene, waterNormals);
     const grid = createGrid(scene);
-    const fleet = createFleet(scene);
-    const fog = createFog(scene);
     const effects = createEffects(scene, sound, sea);
+    const sinking = createSinking(scene, effects, sea, sound);   // takes over the ships fleet.js reports sunk
+    const fleet = createFleet(scene, sinking);
+    const fog = createFog(scene);
     const battlefield = createBattlefield(scene, sound, sea);   // decoration only: knows nothing of the game
     const bridge = createBridge(scene);
     const holo = createHoloBoard(bridge.interior, bridge.floorY);
@@ -74,6 +76,7 @@ export async function createWorld(canvas, sound, onProgress) {
         sea.update(time);
         grid.update(time);
         fleet.update(dt, time);
+        sinking.update(dt, time);   // before the effects: it moves the fires they burn
         fog.update(dt, time);
         effects.update(dt, time, rig.camera);
         battlefield.update(dt, time, rig.camera);
@@ -85,9 +88,10 @@ export async function createWorld(canvas, sound, onProgress) {
     renderer.setAnimationLoop(() => frame());
 
     // Developer hook: open the page with ?debug to step and time frames from
-    // the console (used to measure performance). It exposes nothing about the game.
+    // the console (used to measure performance and to test a sinking). It shows
+    // nothing hidden: the fleet only holds ships the server has revealed.
     if (new URLSearchParams(location.search).has('debug')) {
-        window.__bb = { renderer, scene, rig, frame, weather, storm, battlefield };
+        window.__bb = { renderer, scene, rig, frame, weather, storm, battlefield, fleet };
     }
 
     // ---- Mouse picking -----------------------------------------------------------
@@ -166,7 +170,7 @@ export async function createWorld(canvas, sound, onProgress) {
                 grid.setCellState('enemy', row, col, theirs);
                 // The fog opens above every cell I have already shot.
                 fog.setRevealed(row, col, theirs !== 'EMPTY', instant);
-                // A hit ship burns until it sinks.
+                // A hit ship burns until it sinks (then sinking.js burns its decks until the sea puts them out).
                 if (mine === 'HIT') {
                     fires.push({ key: `mine:${row}:${col}`, position: cellToWorld('mine', row, col).setY(DECK_HEIGHT + 0.6) });
                 }
@@ -176,7 +180,7 @@ export async function createWorld(canvas, sound, onProgress) {
             }
         }
         effects.syncFires(fires);
-        holo.sync(view);
+        holo.sync(view, instant);
         fleet.sync('mine', view.yourShips, instant);
         // Only sunk enemy ships are in this list: the server sends nothing else.
         fleet.sync('enemy', view.opponentShips, instant);

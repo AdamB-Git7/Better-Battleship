@@ -1,6 +1,7 @@
 // Manages the ships that are in the scene: creates them from the layouts the
-// server sends, makes them float, draws their wake, sinks them, and shows the
-// translucent placement preview ("ghost").
+// server sends, makes them float, draws their wake, and shows the translucent
+// placement preview ("ghost"). When a ship is sunk it is handed over to
+// sinking.js, which takes it down and leaves the wreck site.
 //
 // Anti-cheat note: this module only ever draws what is in view.yourShips and
 // view.opponentShips. The server puts an enemy ship in opponentShips only once
@@ -12,8 +13,6 @@ import { buildGhostModel, buildShipModel, DECK_HEIGHT } from './shipModels.js';
 import { swellAt, WAVE_GLSL, seaUniforms } from './sea.js';
 import { foamTexture, wakeMaskTexture } from './textures.js';
 
-const SINK_SECONDS = 7;
-const SINK_DEPTH = 3.4;      // a wreck stays half out of the water, so a sunk ship can still be seen
 const WAKE_OPACITY = 0.55;
 
 // The wake is a sheet of foam that follows the waves (same formula as the sea).
@@ -49,7 +48,10 @@ const wakeFragment = /* glsl */`
     }
 `;
 
-export function createFleet(scene) {
+/**
+ * @param sinking the sinking module (sinking.js): it animates the sunk ships
+ */
+export function createFleet(scene, sinking) {
     const root = new THREE.Group();
     scene.add(root);
 
@@ -91,7 +93,7 @@ export function createFleet(scene) {
         const wake = buildWake(body);
         anchor.add(body, wake);
         root.add(anchor);
-        const entry = { anchor, body, wake, key: layoutKey(layout), sunk: false, sinkTime: 0 };
+        const entry = { anchor, body, wake, zone, type: layout.type, key: layoutKey(layout), sunk: false };
         fleets[zone].set(layout.type, entry);
         return entry;
     }
@@ -99,6 +101,7 @@ export function createFleet(scene) {
     function removeShip(zone, type) {
         const entry = fleets[zone].get(type);
         if (entry) {
+            sinking.forget(entry);
             root.remove(entry.anchor);
             entry.wake.material.dispose();
             fleets[zone].delete(type);
@@ -122,7 +125,7 @@ export function createFleet(scene) {
             const entry = fleets[zone].get(layout.type) || addShip(zone, layout);
             if (layout.sunk && !entry.sunk) {
                 entry.sunk = true;
-                entry.sinkTime = instant ? SINK_SECONDS : 0;
+                sinking.start(entry, instant);   // from now on sinking.js moves this ship
             }
         }
     }
@@ -133,6 +136,7 @@ export function createFleet(scene) {
                 removeShip(zone, type);
             }
         }
+        sinking.clear();
         hideGhost();
     }
 
@@ -182,24 +186,15 @@ export function createFleet(scene) {
         foamScroll.x += dt * 0.12;   // foam drifts towards the stern
         for (const zone of Object.keys(fleets)) {
             for (const entry of fleets[zone].values()) {
-                const { anchor, body, wake } = entry;
-                // The ship rides the swell and leans with the slope of the water.
-                const swell = swellAt(anchor.position.x, anchor.position.z, time, anchor.rotation.y);
-                if (!entry.sunk) {
-                    body.position.y = swell.height;
-                    body.rotation.x = swell.roll;
-                    body.rotation.z = swell.pitch;
-                    continue;
+                if (entry.sunk) {
+                    continue;   // sinking.js moves it
                 }
-                // Sinking: go down slowly while listing to one side, bow up.
-                entry.sinkTime = Math.min(entry.sinkTime + dt, SINK_SECONDS);
-                const p = entry.sinkTime / SINK_SECONDS;
-                const eased = p * p * (3 - 2 * p);
-                const afloat = 1 - eased;
-                body.position.y = swell.height * afloat - SINK_DEPTH * eased;
-                body.rotation.x = swell.roll * afloat + 0.3 * eased;
-                body.rotation.z = swell.pitch * afloat + 0.16 * eased;
-                wake.material.uniforms.uOpacity.value = WAKE_OPACITY * afloat;
+                // The ship rides the swell and leans with the slope of the water.
+                const { anchor, body } = entry;
+                const swell = swellAt(anchor.position.x, anchor.position.z, time, anchor.rotation.y);
+                body.position.y = swell.height;
+                body.rotation.x = swell.roll;
+                body.rotation.z = swell.pitch;
             }
         }
     }
