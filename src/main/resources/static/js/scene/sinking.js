@@ -38,8 +38,8 @@ import { weather, WIND } from './weather.js';
 const BLOW_AT = 0.1;          // seconds after the sinking starts: the magazine goes up
 const UNDER_Y = -3.2;         // a part is gone when all of it is below this (lower than any wave trough)
 const REST_AFTER = 140;       // seconds after the hull went under: the wreck site is calm for good
-const STAIN = 0.5;            // opacity of the oil stain that stays
-const KEEPERS = 4;            // pieces of debris that never sink
+const STAIN = 0.62;           // opacity of the oil stain that stays
+const KEEPERS = 6;            // pieces of debris that never sink
 const MAX_DEBRIS = 160;       // all wrecks together (10 ships x at most 14 pieces)
 const MAX_SPLASHES = 48;      // debris about to hit the water
 const CHAR = new THREE.Color(0x1b1714);   // burnt paint
@@ -135,7 +135,7 @@ const slickFragment = /* glsl */`
         // sheen, seen mostly when lightning strikes.
         float film = n2 * 7.0 + r * 4.0;
         vec3 sheen = 0.5 + 0.5 * cos(6.2832 * (film + vec3(0.0, 0.33, 0.67)));
-        vec3 oilColor = vec3(0.012, 0.012, 0.011) + sheen * (0.012 + 0.1 * uFlash) * (1.0 - thick * 0.5);
+        vec3 oilColor = vec3(0.012, 0.012, 0.011) + sheen * (0.028 + 0.1 * uFlash) * (1.0 - thick * 0.5);
         oilColor += vec3(1.0, 0.42, 0.12) * uBurn * 0.07 * (1.0 - smoothstep(0.0, 0.8, r));
         vec3 foamColor = vec3(0.6, 0.66, 0.7) * (0.32 + uFlash * 1.2);   // as bright as the wake foam
 
@@ -355,7 +355,7 @@ export function createSinking(scene, effects, sea, sound) {
             materials: [], geometries: [],
             center: anchor.localToWorld(new THREE.Vector3(plan.pivot * 0.6, 0, 0)).setY(0),
             drift: new THREE.Vector2(),
-            radius: length * 0.42 + 9,
+            radius: length * 0.36 + 7,
             wakeOpacity: entry.wake.material.uniforms.uOpacity.value,
             charFrom: entry.zone === 'enemy' ? 0.5 : 0,   // an enemy ship is first seen already burning
             done: {},                                     // one-off events already played
@@ -674,23 +674,29 @@ export function createSinking(scene, effects, sea, sound) {
         if (along > 0) {
             dip += (plan.angle - plan.settle) * smooth(0, 0.75, u);
             roll += plan.side * plan.roll * smooth(0, 0.7, u);
-            y -= plan.depth * Math.pow(along, 1.9);
+            // A hull that breaks goes down slowly at first, so that its two halves
+            // can take their turn (see below); the others slide straight down.
+            const sink = plan.style === 'break'
+                ? 0.06 * smooth(0, 0.5, u) + 0.94 * Math.pow(Math.max(0, (along - 0.5) / 0.5), 2)
+                : Math.pow(along, plan.style === 'capsize' ? 3 : 1.9);   // a capsized hull floats keel up a moment
+            y -= plan.depth * sink;
         }
         rig.position.set(plan.pivot + plan.down * length * 0.1 * u * u, y, 0);
         rig.rotation.set(roll, plan.yaw * smooth(1, plan.under, t), pitch - plan.down * dip);
 
         // Breaking in two: the hull gives way at the cut (it hogs: both ends
-        // drop a little), the low half dives steeper, then the other half
-        // stands up, almost vertical, before it follows.
+        // drop a little), the low half dives steeper and is pulled under
+        // first, then the other half stands up, steep, before it follows.
         if (plan.style === 'break') {
             const give = smooth(0.12, 0.38, u);
             for (const part of wreck.parts) {
                 const low = part.side === plan.down;
                 const extra = low
                     ? plan.bend * give
-                    : -0.22 * give + plan.rise * smooth(0.42, 0.92, u);
+                    : -0.22 * give + plan.rise * smooth(0.3, 0.75, u);
                 part.group.rotation.z = -plan.down * extra;
                 part.group.position.x = low ? plan.down * 1.4 * give : 0;   // a gap opens
+                part.group.position.y = low ? -9 * smooth(0.2, 0.6, u) : 0;
             }
             if (give > 0.05 && !wreck.done.broke) {
                 wreck.done.broke = true;

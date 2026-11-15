@@ -404,7 +404,7 @@ export function createSound() {
             slips.frequency.setValueAtTime(26 + Math.random() * 10, start);
             slips.frequency.linearRampToValueAtTime(13 + Math.random() * 5, start + seconds);
             const body = gainNode(0);
-            const peak = Math.min(0.2, 0.09 * strength) * near;
+            const peak = Math.min(0.9, 0.45 * strength) * near;
             body.gain.setValueAtTime(0.0001, start);
             body.gain.exponentialRampToValueAtTime(peak, start + seconds * 0.4);
             body.gain.exponentialRampToValueAtTime(0.0001, start + seconds);
@@ -418,7 +418,7 @@ export function createSound() {
             body.connect(filterNode('lowpass', 900)).connect(effectsBus);
             slips.start(start);
             slips.stop(start + seconds + 0.05);
-            noise({ duration: seconds, volume: 0.16 * strength * near, type: 'lowpass', from: 220, to: 60 });
+            noise({ duration: seconds, volume: 0.22 * strength * near, type: 'lowpass', from: 220, to: 60 });
         },
 
         /** Hiss of steam: hot metal and boilers meeting the sea. Swells in, then fades. */
