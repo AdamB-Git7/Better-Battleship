@@ -192,7 +192,11 @@ function showView(newView, shot) {
     }
     hud.showGame(view, orientation, onBridge());
     pirate.say(guide.onView(previous, view, shot));
-    aimHead(shot ? 1.2 : 0.4);   // after a shot, watch the impact a moment first
+    // After a shot, watch the impact a moment first. After a sinking, the eyes
+    // stay on the window a little longer to see the ship go down, but the board
+    // is ready to aim as usual (and stays clickable in the lower part of the view).
+    const sunk = shot && shot.result === 'SUNK';
+    aimHead(shot ? 1.2 : 0.4, sunk ? (shot.zone === 'enemy' ? 3.4 : 2.6) : undefined);
     refreshHover();
 }
 
@@ -215,11 +219,13 @@ function chooseCamera() {
  * On the bridge the captain looks down at the holographic board when it is
  * his turn to aim, and out of the window the rest of the time.
  * @param delay seconds to keep the current look first (to watch an impact)
+ * @param lookDelay the same for the head only (default: delay), the board
+ *        still switches its focus after `delay`
  */
-function aimHead(delay) {
+function aimHead(delay, lookDelay = delay) {
     if (onBridge()) {
         const aiming = view.status === 'IN_PROGRESS' && view.yourTurn;
-        world.camera.lookAt(aiming ? 'board' : 'window', delay);
+        world.camera.lookAt(aiming ? 'board' : 'window', lookDelay);
         // The board shows the enemy zone big to aim, my own zone big otherwise.
         world.setBoardFocus(aiming ? 'enemy' : 'mine', delay);
     }

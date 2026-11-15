@@ -26,6 +26,9 @@
 //
 // Like the rest of the scene, the board only shows what the server sent:
 // enemy ships appear on it only once they are sunk.
+//
+// When a ship is sunk its hologram flashes red once and sinks halfway into the
+// board, tilted, where it stays (still readable, but clearly gone).
 
 import * as THREE from 'three';
 import { CELL, GRID_SIZE, ROW_LABELS, ZONES, ZONE_SPAN, cellToWorld, worldToCell } from '../config.js';
@@ -49,6 +52,13 @@ const ENEMY = 0xf0a45c;
 const DANGER = 0xff4a3d;
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// A sunk ship's hologram rests this much lower (in sea units), tilted.
+const SUNK_DROP = 2.6;
+const SUNK_PITCH = 0.12;
+const SUNK_ROLL = 0.22;
+const SINK_SECONDS = 2.6;                      // the flash and the slide into the board
+const SINK_FLASH = reducedMotion ? 1.8 : 4;    // how much brighter at the peak of the flash
 
 // ---- The hologram shader ----------------------------------------------------------
 
@@ -369,12 +379,76 @@ export function createHoloBoard(parent, floorY = -3.2) {
         return object;
     }
 
-    function syncShips(zone, layouts) {
+    // Holograms playing their sinking: each has its own copy of the look, so
+    // it can flash alone. { object, look, fill, edge, time }
+    const sinkingShips = [];
+
+    /** The resting pose of a sunk hologram, or a fraction of it (0..1). */
+    function sunkPose(object, amount) {
+        object.rotation.order = 'YXZ';   // heading first, then the tilt around the model's own axes
+        object.position.y = -SUNK_DROP * amount;
+        object.rotation.z = SUNK_PITCH * amount;
+        object.rotation.x = SUNK_ROLL * amount;
+    }
+
+    function startSinking(object, look) {
+        const fill = holo(DANGER, look.fill.uniforms.uOpacity.value, 1);
+        const edge = holoLine(DANGER, look.edge.userData.baseOpacity);
+        object.traverse(child => {
+            if (child.isLineSegments) {
+                child.material = edge;
+            } else if (child.isMesh) {
+                child.material = fill;
+            }
+        });
+        sinkingShips.push({ object, look, fill, edge, time: 0 });
+    }
+
+    function endSinking(index, keepPose = true) {
+        const sinking = sinkingShips[index];
+        sinkingShips.splice(index, 1);
+        sinking.object.traverse(child => {
+            if (child.isLineSegments) {
+                child.material = sinking.look.edge;
+            } else if (child.isMesh) {
+                child.material = sinking.look.fill;
+            }
+        });
+        if (keepPose) {
+            sunkPose(sinking.object, 1);
+        }
+        sinking.fill.dispose();
+        sinking.edge.dispose();
+    }
+
+    function updateSinking(dt) {
+        for (let i = sinkingShips.length - 1; i >= 0; i--) {
+            const sinking = sinkingShips[i];
+            sinking.time += dt;
+            const t = sinking.time;
+            // One soft flash (up in 0.15 s, down over about a second), never a strobe.
+            const flash = t < 0.15 ? t / 0.15 : Math.exp(-(t - 0.15) * 2.6);
+            const boost = 1 + (SINK_FLASH - 1) * flash;
+            sinking.fill.uniforms.uOpacity.value = sinking.look.fill.uniforms.uOpacity.value * boost;
+            sinking.edge.opacity = Math.min(1, sinking.look.edge.userData.baseOpacity * boost) * shared.uFlicker.value;
+            const slide = Math.min(1, Math.max(0, (t - 0.25) / (SINK_SECONDS - 0.25)));
+            sunkPose(sinking.object, slide * slide * (3 - 2 * slide));
+            if (t >= SINK_SECONDS) {
+                endSinking(i);
+            }
+        }
+    }
+
+    function syncShips(zone, layouts, instant) {
         const wanted = new Map(layouts.map(layout => [layout.type, layout]));
         for (const [id, entry] of ships) {
             const [entryZone, type] = id.split(':');
             const layout = wanted.get(type);
             if (entryZone === zone && (!layout || entry.key !== shipKey(layout))) {
+                const index = sinkingShips.findIndex(sinking => sinking.object === entry.object);
+                if (index >= 0) {
+                    endSinking(index, false);
+                }
                 zones[zone].ships.remove(entry.object);
                 ships.delete(id);
             }
@@ -387,14 +461,27 @@ export function createHoloBoard(parent, floorY = -3.2) {
             const look = zone === 'enemy' ? shipLooks.enemy : layout.sunk ? shipLooks.lost : shipLooks.mine;
             const object = buildHologram(layout.type, look);
             placeOnGrid(object, zone, layout);
+            if (layout.sunk) {
+                if (instant) {
+                    sunkPose(object, 1);
+                } else {
+                    startSinking(object, look);
+                }
+            }
             zones[zone].ships.add(object);
             ships.set(id, { key: shipKey(layout), object });
         }
     }
 
-    /** Makes the board match a view sent by the server (null = empty board). */
-    function sync(view) {
+    /**
+     * Makes the board match a view sent by the server (null = empty board).
+     * @param instant true = no animation (a ship already sunk is shown at rest)
+     */
+    function sync(view, instant = false) {
         if (!view) {
+            while (sinkingShips.length > 0) {
+                endSinking(sinkingShips.length - 1, false);
+            }
             for (const zone of Object.keys(zones)) {
                 zones[zone].markers.clear();
                 zones[zone].ships.clear();
@@ -409,8 +496,8 @@ export function createHoloBoard(parent, floorY = -3.2) {
                 setCellState('enemy', row, col, view.opponentBoard[row][col]);
             }
         }
-        syncShips('mine', view.yourShips);
-        syncShips('enemy', view.opponentShips);
+        syncShips('mine', view.yourShips, instant);
+        syncShips('enemy', view.opponentShips, instant);
     }
 
     // ---- Hover highlight ------------------------------------------------------
@@ -500,6 +587,7 @@ export function createHoloBoard(parent, floorY = -3.2) {
         for (const material of lineMaterials) {
             material.opacity = material.userData.baseOpacity * shared.uFlicker.value;
         }
+        updateSinking(dt);
         // Hit markers pulse, so damage draws the eye.
         materials.HIT.uniforms.uOpacity.value = 0.75 + 0.25 * Math.sin(time * 5);
     }
