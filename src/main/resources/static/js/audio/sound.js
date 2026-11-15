@@ -62,6 +62,9 @@ export function createSound() {
     let engine = null;          // the drone of the planes, once started
     let lastDistant = 0;        // when the last distant boom / flak pop was started
     let lastFlak = 0;
+    let lastSecondary = 0;      // the sinking sounds are rate-limited too
+    let lastGroan = 0;
+    let lastSteam = 0;
     let lastEngineUpdate = 0;
     let ambience = null;        // the nodes of the storm ambience, once started
     let muted = false;
@@ -355,6 +358,118 @@ export function createSound() {
             noise({ duration: 1.4, volume: 0.45 * near, type: 'bandpass', from: 2400, to: 500 });
             noise({ at: 0.25, duration: 1.6, volume: 0.25 * near, type: 'highpass', from: 3000, to: 1800 });   // spray falling back
             thump({ duration: 0.4, volume: 0.45 * near, from: 95, to: 38 });
+        },
+
+        // ---- A ship going down (see scene/sinking.js) ----------------------------
+        // Deliberately few, dark layers, quieter than a gun: they sit under the
+        // storm instead of on top of it.
+
+        /** The killing blow: a magazine going up. A sharp crack, then a deep, long roll. */
+        deathBlow(distance = 0) {
+            if (!ready()) return;
+            const near = nearness(distance);
+            noise({ duration: 0.09, volume: 0.4 * near, type: 'highpass', from: 2600, to: 1200 });
+            thump({ duration: 2.4, volume: 0.85 * near, from: 58, to: 17 });
+            noise({ duration: 3.4, volume: 0.65 * near, type: 'lowpass', from: 1100 * near + 250, to: 38 });
+            for (let i = 0; i < 4; i++) {   // things breaking and falling back
+                noise({ at: 0.2 + Math.random() * 1.1, duration: 0.2 + Math.random() * 0.3, volume: 0.08 * near,
+                    type: 'bandpass', from: 1500, to: 400, q: 1.2 });
+            }
+        },
+
+        /** A small blast inside a burning hull (ammunition, a fuel tank): muffled. */
+        secondaryBlast(distance = 0) {
+            if (!ready() || context.currentTime - lastSecondary < 0.3) return;
+            lastSecondary = context.currentTime;
+            const near = nearness(distance);
+            thump({ duration: 0.9, volume: 0.35 * near, from: 72, to: 26 });
+            noise({ duration: 1.2, volume: 0.28 * near, type: 'lowpass', from: 700 * near + 200, to: 50 });
+        },
+
+        /**
+         * Steel giving way. A real creak is a fast train of tiny slips: here a
+         * very low saw-tooth (each tooth = one slip), slowing down, heard
+         * only through two resonances of the hull that slide down in pitch,
+         * over a deep rumble. Quiet and dark on purpose.
+         * @param strength 1 = a normal groan, more for the hull breaking in two
+         */
+        groan(distance = 0, strength = 1) {
+            if (!ready() || context.currentTime - lastGroan < 1.2) return;
+            lastGroan = context.currentTime;
+            const near = nearness(distance);
+            const start = context.currentTime;
+            const seconds = 2.4 + Math.random() * 1.6;
+            const slips = context.createOscillator();
+            slips.type = 'sawtooth';
+            slips.frequency.setValueAtTime(26 + Math.random() * 10, start);
+            slips.frequency.linearRampToValueAtTime(13 + Math.random() * 5, start + seconds);
+            const body = gainNode(0);
+            const peak = Math.min(0.2, 0.09 * strength) * near;
+            body.gain.setValueAtTime(0.0001, start);
+            body.gain.exponentialRampToValueAtTime(peak, start + seconds * 0.4);
+            body.gain.exponentialRampToValueAtTime(0.0001, start + seconds);
+            const pitch = 150 + Math.random() * 80;
+            for (const [ratio, q, level] of [[1, 9, 1], [2.3, 12, 0.5]]) {
+                const band = filterNode('bandpass', pitch * ratio * 1.2, q);
+                band.frequency.setValueAtTime(pitch * ratio * 1.2, start);
+                band.frequency.exponentialRampToValueAtTime(pitch * ratio * 0.75, start + seconds);
+                slips.connect(band).connect(gainNode(level)).connect(body);
+            }
+            body.connect(filterNode('lowpass', 900)).connect(effectsBus);
+            slips.start(start);
+            slips.stop(start + seconds + 0.05);
+            noise({ duration: seconds, volume: 0.16 * strength * near, type: 'lowpass', from: 220, to: 60 });
+        },
+
+        /** Hiss of steam: hot metal and boilers meeting the sea. Swells in, then fades. */
+        steam(distance = 0, seconds = 3) {
+            if (!ready() || context.currentTime - lastSteam < 1.5) return;
+            lastSteam = context.currentTime;
+            const near = nearness(distance);
+            const start = context.currentTime;
+            const source = context.createBufferSource();
+            source.buffer = noiseBuffer;
+            source.loop = true;
+            const gain = gainNode(0);
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.exponentialRampToValueAtTime(0.07 * near, start + 0.4);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + seconds);
+            source.connect(filterNode('highpass', 2200)).connect(filterNode('lowpass', 7000)).connect(gain).connect(effectsBus);
+            source.start(start, Math.random() * 2);
+            source.stop(start + seconds + 0.05);
+        },
+
+        /**
+         * The hull slipping under: a deep rumble that bubbles (its volume
+         * wobbles with two slow, unrelated beats, like air breaking the surface).
+         */
+        plunge(distance = 0) {
+            if (!ready()) return;
+            const near = nearness(distance);
+            const start = context.currentTime;
+            const seconds = 5.5;
+            const source = context.createBufferSource();
+            source.buffer = noiseBuffer;
+            source.loop = true;
+            const tone = filterNode('lowpass', 520);
+            tone.frequency.setValueAtTime(520, start);
+            tone.frequency.exponentialRampToValueAtTime(110, start + seconds);
+            const gain = gainNode(0);
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.exponentialRampToValueAtTime(0.32 * near, start + 1.2);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + seconds);
+            const bubbling = gainNode(1);
+            for (const [rate, depth] of [[3.1, 0.35], [5.3, 0.25]]) {
+                const lfo = context.createOscillator();
+                lfo.frequency.value = rate * (0.85 + Math.random() * 0.3);
+                lfo.connect(gainNode(depth)).connect(bubbling.gain);
+                lfo.start(start);
+                lfo.stop(start + seconds + 0.05);
+            }
+            source.connect(tone).connect(bubbling).connect(gain).connect(effectsBus);
+            source.start(start, Math.random() * 2);
+            source.stop(start + seconds + 0.05);
+            thump({ at: 0.3, duration: 3.2, volume: 0.35 * near, from: 46, to: 20 });
         },
 
         // ---- The battle in the background (see scene/battlefield.js) -------------

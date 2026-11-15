@@ -95,6 +95,36 @@ export function wakeMaskTexture() {
     return new THREE.CanvasTexture(element);
 }
 
+/**
+ * Tileable grey blotches (soft blobs of every size): the uneven thickness of
+ * an oil slick, read by the slick shader at two scales (see sinking.js).
+ */
+export function blotTexture() {
+    const size = 256;
+    const { element, ctx } = canvas(size, size);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, size, size);
+    for (let i = 0; i < 140; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const radius = 6 + Math.pow(Math.random(), 2) * 60;
+        const alpha = 0.12 + Math.random() * 0.3;
+        // Drawn nine times (shifted by the size) so blobs crossing an edge wrap around.
+        for (const dx of [-size, 0, size]) {
+            for (const dy of [-size, 0, size]) {
+                const gradient = ctx.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, radius);
+                gradient.addColorStop(0, `rgba(255,255,255,${alpha})`);
+                gradient.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x + dx - radius, y + dy - radius, radius * 2, radius * 2);
+            }
+        }
+    }
+    const texture = new THREE.CanvasTexture(element);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+}
+
 /** A short text label (grid coordinates) as a texture. */
 export function labelTexture(text, color = '#9fe8ff') {
     const { element, ctx } = canvas(64, 64);

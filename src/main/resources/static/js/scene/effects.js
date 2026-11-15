@@ -7,15 +7,20 @@
 // The storm acts on everything here: the wind (weather.js) bends the flames
 // and carries the smoke and the embers away, lightning lights the smoke and
 // the spray, and fires shine on the water and on the ships around them.
+//
+// The sinking of a ship (sinking.js) borrows this module's pool, explosions
+// and fires (see "loose fires" below), so it adds no draw call and no light.
 
 import * as THREE from 'three';
 import { createParticles } from './particles.js';
 import { weather, WIND } from './weather.js';
 import { waveHeight } from './sea.js';
 
-const POOL_SIZE = 2400;
+const POOL_SIZE = 3600;      // room for a sinking ship on top of the usual fires
 const FIRE_LIGHTS = 2;      // real lights, on the fires closest to the camera
 const SEA_GLOWS = 3;        // fires reflected in the water (slot 0 is for explosions)
+// With "reduce motion", explosions light the scene much less.
+const FLASH_SCALE = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.35 : 1;
 
 /**
  * @param sound the sound module
@@ -79,9 +84,9 @@ export function createEffects(scene, sound, sea) {
                 size: [2.5, 11], color: 0x8d8a86, colorEnd: 0x3d4043, opacity: 0.5, smoke: true, drag: 1, wind: 0.5 });
         }
         flash.position.copy(from).y += 3;
-        flash.intensity = Math.max(flash.intensity, 500);
-        sea.setGlow(0, from, 1.2);
-        seaFlash = Math.max(seaFlash, 1.2);
+        flash.intensity = Math.max(flash.intensity, 500 * FLASH_SCALE);
+        sea.setGlow(0, from, 1.2 * FLASH_SCALE);
+        seaFlash = Math.max(seaFlash, 1.2 * FLASH_SCALE);
         sound.cannon(distanceTo(from));
     }
 
@@ -107,24 +112,36 @@ export function createEffects(scene, sound, sea) {
 
     // ---- Impacts ------------------------------------------------------------
 
-    function explosion(position) {
-        for (let i = 0; i < 22; i++) {   // fireball
-            spawn({ position, velocity: burst(18, 4 + Math.random() * 12), life: 0.55 + Math.random() * 0.4,
-                size: [4, 14], color: i % 3 === 0 ? 0xfff0b0 : 0xff7a1f, colorEnd: 0xb3300a, additive: true, drag: 2.5 });
+    /**
+     * A fireball with sparks and smoke.
+     * @param size 1 = a shell hit; smaller for the little blasts on a sinking
+     *        ship, bigger for the killing blow
+     * @param options light: false = no flash of light (for blasts that follow
+     *        each other quickly, so the scene never strobes); silent: true = no sound
+     */
+    function explosion(position, size = 1, { light = true, silent = false } = {}) {
+        const count = n => Math.max(2, Math.round(n * Math.min(size, 1.6)));
+        for (let i = 0, n = count(22); i < n; i++) {   // fireball
+            spawn({ position, velocity: burst(18 * size, (4 + Math.random() * 12) * size), life: 0.55 + Math.random() * 0.4,
+                size: [4 * size, 14 * size], color: i % 3 === 0 ? 0xfff0b0 : 0xff7a1f, colorEnd: 0xb3300a, additive: true, drag: 2.5 });
         }
-        for (let i = 0; i < 26; i++) {   // sparks and burning debris, carried by the wind
-            spawn({ position, velocity: burst(46, 12 + Math.random() * 26), life: 1 + Math.random() * 0.9,
+        for (let i = 0, n = count(26); i < n; i++) {   // sparks and burning debris, carried by the wind
+            spawn({ position, velocity: burst(46 * size, (12 + Math.random() * 26) * Math.sqrt(size)), life: 1 + Math.random() * 0.9,
                 size: [1.1, 0.3], color: 0xffc35a, colorEnd: 0xff5a1a, additive: true, gravity: 1, wind: 0.25 });
         }
-        for (let i = 0; i < 16; i++) {   // smoke: lit orange from inside at first, then black
-            spawn({ position, velocity: burst(9, 5 + Math.random() * 8), life: 3 + Math.random() * 1.5,
-                size: [5, 22], color: 0x8a4a1c, colorEnd: 0x141517, opacity: 0.75, smoke: true, drag: 0.6, wind: 0.6 });
+        for (let i = 0, n = count(16); i < n; i++) {   // smoke: lit orange from inside at first, then black
+            spawn({ position, velocity: burst(9 * size, (5 + Math.random() * 8) * size), life: 3 + Math.random() * 1.5,
+                size: [5 * size, 22 * size], color: 0x8a4a1c, colorEnd: 0x141517, opacity: 0.75, smoke: true, drag: 0.6, wind: 0.6 });
         }
-        flash.position.copy(position).y += 4;
-        flash.intensity = 1400;
-        sea.setGlow(0, position, 3.5);
-        seaFlash = 3.5;
-        sound.explosion(distanceTo(position));
+        if (light) {
+            flash.position.copy(position).y += 4;
+            flash.intensity = Math.max(flash.intensity, 1400 * Math.min(size, 1.5) * FLASH_SCALE);
+            sea.setGlow(0, position, 3.5 * FLASH_SCALE);
+            seaFlash = Math.max(seaFlash, 3.5 * Math.min(size, 1.3) * FLASH_SCALE);
+        }
+        if (!silent) {
+            sound.explosion(distanceTo(position));
+        }
     }
 
     // Foam rings spreading on the water after a miss.
@@ -177,6 +194,10 @@ export function createEffects(scene, sound, sea) {
 
     // ---- Lasting fire and smoke on damaged cells ---------------------------
     const fires = new Map();   // key -> { position, base, flameTimer, smokeTimer, flicker }
+    // "Loose" fires belong to someone else (the decks and the burning oil of a
+    // sinking ship, see sinking.js): the owner moves them and removes them,
+    // this module burns them and lets them compete for the lights.
+    const looseFires = new Set();
     let nearest = [];          // the fires closest to the camera, refreshed now and then
     let nearestTimer = 0;
 
@@ -206,35 +227,47 @@ export function createEffects(scene, sound, sea) {
         nearestTimer = 0;   // choose again which fires get a light
     }
 
+    /**
+     * One frame of a fire: flames, embers and smoke at fire.position.
+     * fire.scale (optional, default 1) makes the flames and the smoke bigger or smaller.
+     */
+    function burn(fire, dt) {
+        const scale = fire.scale ?? 1;
+        fire.flameTimer -= dt;
+        fire.smokeTimer -= dt;
+        if (fire.flameTimer <= 0) {
+            fire.flameTimer = 0.07;
+            // Flames lean with the wind and are torn off in gusts.
+            spawn({ position: fire.position, velocity: windBlown(2 * scale, (4 + Math.random() * 3) * scale, 0.3), life: 0.5 + Math.random() * 0.2,
+                size: [3.6 * scale, 0.8 * scale], color: Math.random() < 0.3 ? 0xffe08a : 0xff6a1a, colorEnd: 0xc22e08, additive: true });
+            if (Math.random() < 0.18) {   // an ember
+                spawn({ position: fire.position, velocity: windBlown(5, 6 + Math.random() * 6, 0.4), life: 1.4 + Math.random(),
+                    size: [0.7, 0.2], color: 0xffb04a, colorEnd: 0xff4a12, additive: true, gravity: 0.25, wind: 0.5 });
+            }
+        }
+        if (fire.smokeTimer <= 0) {
+            fire.smokeTimer = 0.17;
+            // Thick smoke: glowing orange just above the fire, then black, blown downwind.
+            spawn({ position: fire.position, velocity: windBlown(1.5, (5 + Math.random() * 2) * Math.sqrt(scale), 0.15), life: 4.2 + Math.random(),
+                size: [3 * scale, 17 * scale], color: 0x7a3d16, colorEnd: 0x121315, opacity: 0.6, smoke: true, drag: 0.1, wind: 0.55 });
+        }
+    }
+
     function updateFires(dt, time) {
         for (const fire of fires.values()) {
             // The burning deck goes up and down with the ship.
             fire.position.y = fire.base + waveHeight(fire.position.x, fire.position.z, time) * 0.7;
-            fire.flameTimer -= dt;
-            fire.smokeTimer -= dt;
-            if (fire.flameTimer <= 0) {
-                fire.flameTimer = 0.07;
-                // Flames lean with the wind and are torn off in gusts.
-                spawn({ position: fire.position, velocity: windBlown(2, 4 + Math.random() * 3, 0.3), life: 0.5 + Math.random() * 0.2,
-                    size: [3.6, 0.8], color: Math.random() < 0.3 ? 0xffe08a : 0xff6a1a, colorEnd: 0xc22e08, additive: true });
-                if (Math.random() < 0.18) {   // an ember
-                    spawn({ position: fire.position, velocity: windBlown(5, 6 + Math.random() * 6, 0.4), life: 1.4 + Math.random(),
-                        size: [0.7, 0.2], color: 0xffb04a, colorEnd: 0xff4a12, additive: true, gravity: 0.25, wind: 0.5 });
-                }
-            }
-            if (fire.smokeTimer <= 0) {
-                fire.smokeTimer = 0.17;
-                // Thick smoke: glowing orange just above the fire, then black, blown downwind.
-                spawn({ position: fire.position, velocity: windBlown(1.5, 5 + Math.random() * 2, 0.15), life: 4.2 + Math.random(),
-                    size: [3, 17], color: 0x7a3d16, colorEnd: 0x121315, opacity: 0.6, smoke: true, drag: 0.1, wind: 0.55 });
-            }
+            burn(fire, dt);
+        }
+        for (const fire of looseFires) {
+            burn(fire, dt);
         }
 
         // The closest fires get the real lights and the reflections on the sea.
         nearestTimer -= dt;
         if (nearestTimer <= 0 && listener) {
             nearestTimer = 1;
-            nearest = [...fires.values()]
+            nearest = [...fires.values(), ...looseFires]
                 .sort((a, b) => listener.position.distanceToSquared(a.position) - listener.position.distanceToSquared(b.position))
                 .slice(0, SEA_GLOWS);
         }
@@ -256,8 +289,27 @@ export function createEffects(scene, sound, sea) {
         }
     }
 
+    /**
+     * Hands a fire to this module (see looseFires).
+     * @param fire { position, scale? } (the timers are added here)
+     */
+    function addFire(fire) {
+        fire.flameTimer = 0;
+        fire.smokeTimer = Math.random() * 0.2;
+        fire.phase = Math.random() * 10;
+        looseFires.add(fire);
+        nearestTimer = 0;
+    }
+
+    function removeFire(fire) {
+        if (looseFires.delete(fire)) {
+            nearestTimer = 0;   // its light goes to another fire at once
+        }
+    }
+
     function clear() {
         fires.clear();
+        looseFires.clear();
         nearest = [];
         nearestTimer = 0;
         particles.clear();
@@ -292,5 +344,9 @@ export function createEffects(scene, sound, sea) {
         particles.resize(pixelHeight);
     }
 
-    return { fireShell, explosion, splash, syncFires, clear, update, resize };
+    return {
+        fireShell, explosion, splash, syncFires, clear, update, resize,
+        // Used by the sinking (sinking.js):
+        spawn, addFire, removeFire, distanceTo
+    };
 }
