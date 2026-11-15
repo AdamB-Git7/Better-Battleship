@@ -1,9 +1,13 @@
-// All the sound of the game, synthesised with the Web Audio API (no audio files).
+// All the sound of the game, with the Web Audio API.
+//
+// The storm (rain and thunder) uses real recordings, in static/assets/audio
+// (CC0, from OpenGameArt; see the README credits). Guns, explosions,
+// splashes and the background battle are synthesised.
 //
 // Signal path:
 //
 //   one-shot effects (cannon, explosion, splash, thunder) --> effects filter --+
-//   storm ambience (rain, wind, waves) --> ambience filter -------------------+--> master --> limiter --> speakers
+//   storm ambience (recorded rain) -------> ambience filter -----------------+--> master --> limiter --> speakers
 //   bridge-only layers (rain on the roof, hull hum) ---------------------------+
 //
 //   background battle (distant guns, flak, plane engines) --> background gain --> effects filter
@@ -16,7 +20,7 @@
 // - The two filters change with the place: on the bridge the storm is heard
 //   through steel and glass (muffled), in the aerial view it is open and wide.
 //
-// Everything is made from two ingredients: filtered white noise and sine "thumps".
+// The synthesised sounds are made from filtered white noise and sine "thumps".
 
 const MASTER_VOLUME = 0.42;
 const FADE_IN = 4;            // seconds: the sound fades in when it first starts, never a sudden blast
@@ -32,95 +36,24 @@ const PLACES = {
 
 const ENGINE_NOTES = [86, 92.5, 43];   // two slightly detuned engines and their octave below
 
-// ---- Rain samples ----------------------------------------------------------
-// Real rain is not a smooth hiss: it is thousands of separate drops, each a
-// tiny click (plus, on water, a little "plink" from the air bubble it traps),
-// over a soft wash of the drops too far away to tell apart. The samples are
-// computed once, in small slices between frames while the page loads, so the
-// game never freezes; the rain fades in as soon as they are ready.
+// ---- Recorded storm --------------------------------------------------------
+// The files are fetched while the page loads, and decoded once audio starts.
+const RAIN_URL = 'assets/audio/rain-loop.mp3';      // 27 s of heavy rain, loopable
+const THUNDER_URL = 'assets/audio/thunder.mp3';     // one long thunderclap and its roll, 24 s
 
-const RAIN_RATE = 44100;   // samples per second of the rain loops
-
-/** Lets the browser draw a frame when this slice of work has taken a few ms. */
-async function breathe(state) {
-    if (performance.now() - state.since > 6) {
-        await new Promise(resolve => setTimeout(resolve, 0));
-        state.since = performance.now();
-    }
-}
-
-/**
- * Builds a stereo loop of rain: two channels with their own drops, so the rain
- * sounds wide. Drops near the end wrap around to the start, so the loop has no seam.
- * @returns {Promise<Float32Array[]>} the left and right channels
- */
-async function makeRain(seconds, dropsPerSecond) {
-    const length = Math.floor(seconds * RAIN_RATE);
-    const state = { since: performance.now() };
-    const channels = [];
-    for (let channel = 0; channel < 2; channel++) {
-        const data = new Float32Array(length);
-
-        // The wash: pink noise (softer, more natural than white noise),
-        // using Paul Kellet's well-known filter.
-        let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-        for (let i = 0; i < length; i++) {
-            const white = Math.random() * 2 - 1;
-            b0 = 0.99886 * b0 + white * 0.0555179;
-            b1 = 0.99332 * b1 + white * 0.0750759;
-            b2 = 0.969 * b2 + white * 0.153852;
-            b3 = 0.8665 * b3 + white * 0.3104856;
-            b4 = 0.55 * b4 + white * 0.5329522;
-            b5 = -0.7616 * b5 - white * 0.016898;
-            data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.04;
-            b6 = white * 0.115926;
+function fetchAudio(url) {
+    return fetch(url).then(response => {
+        if (!response.ok) {
+            throw new Error(`Could not load ${url}`);
         }
-        await breathe(state);
-
-        // The drops: mostly soft ones, a few close and loud.
-        const drops = Math.floor(seconds * dropsPerSecond);
-        for (let d = 0; d < drops; d++) {
-            const at = Math.floor(Math.random() * length);
-            const loudness = 0.05 + Math.pow(Math.random(), 4) * 0.5;
-            const decay = RAIN_RATE * (0.0004 + Math.random() * 0.0016);   // the click, 0.4 to 2 ms
-            const clickLength = Math.floor(decay * 5);
-            for (let k = 0; k < clickLength; k++) {
-                data[(at + k) % length] += loudness * (Math.random() * 2 - 1) * Math.exp(-k / decay);
-            }
-            // About one drop in six also rings with a short rising "plink".
-            if (Math.random() < 0.16) {
-                const pitch = 1400 + Math.random() * 2800;
-                const ring = RAIN_RATE * (0.003 + Math.random() * 0.008);
-                const ringLength = Math.floor(ring * 5);
-                let phase = 0;
-                for (let k = 0; k < ringLength; k++) {
-                    phase += (2 * Math.PI * pitch * (1 + 0.35 * k / ringLength)) / RAIN_RATE;
-                    data[(at + k) % length] += loudness * 0.35 * Math.sin(phase) * Math.exp(-k / ring);
-                }
-            }
-            if (d % 200 === 0) {
-                await breathe(state);
-            }
-        }
-
-        // Normalise so the loudest moment is just under full scale.
-        let peak = 0;
-        for (let i = 0; i < length; i++) {
-            peak = Math.max(peak, Math.abs(data[i]));
-        }
-        for (let i = 0; i < length; i++) {
-            data[i] *= 0.9 / peak;
-        }
-        channels.push(data);
-        await breathe(state);
-    }
-    return channels;
+        return response.arrayBuffer();
+    });
 }
 
 export function createSound() {
-    // near: crisp drops all around; far: the downpour on the sea further away.
-    // Their loops have different lengths, so together they never repeat.
-    const rainSamples = Promise.all([makeRain(5.3, 1400), makeRain(6.7, 1300)]);
+    const rainBytes = fetchAudio(RAIN_URL);
+    const thunderBytes = fetchAudio(THUNDER_URL);
+    let thunderBuffer = null;   // decoded thunder, once ready
     let context = null;
     let noiseBuffer = null;
     let master = null;
@@ -193,16 +126,6 @@ export function createSound() {
         const gain = context.createGain();
         gain.gain.value = value;
         return gain;
-    }
-
-    /** An endless noise source. Different speeds make the loops sound unrelated. */
-    function noiseLoop(rate) {
-        const source = context.createBufferSource();
-        source.buffer = noiseBuffer;
-        source.loop = true;
-        source.playbackRate.value = rate;
-        source.start(0, Math.random() * 3);
-        return source;
     }
 
     /**
@@ -281,18 +204,21 @@ export function createSound() {
         engine = { volume, tone, oscillators };
     }
 
-    // ---- Rain ------------------------------------------------------------------
+    // ---- Recorded rain -----------------------------------------------------------
 
-    /** Plays a rain buffer in an endless loop, starting at a random point. */
-    function rainLoop(channels, rate = 1) {
-        const buffer = context.createBuffer(2, channels[0].length, RAIN_RATE);
-        buffer.copyToChannel(channels[0], 0);
-        buffer.copyToChannel(channels[1], 1);
+    /**
+     * Plays the rain recording in an endless loop. The first and last 50 ms
+     * are skipped, because MP3 files have a little silence at each end that
+     * would be heard as a tick at every loop.
+     */
+    function rainLoop(buffer, rate, offset) {
         const source = context.createBufferSource();
         source.buffer = buffer;
         source.loop = true;
+        source.loopStart = 0.05;
+        source.loopEnd = buffer.duration - 0.05;
         source.playbackRate.value = rate;
-        source.start(0, Math.random() * buffer.duration);
+        source.start(0, 0.05 + offset * (buffer.duration - 0.1));
         return source;
     }
 
@@ -304,45 +230,31 @@ export function createSound() {
         const tone = filterNode('lowpass', settings.ambienceTone);
         bus.connect(tone).connect(master);
 
-        // Rain: two layers of separate drops (see makeRain above), plugged in
-        // as soon as their samples are ready:
-        // - the near layer: crisp drops all around, lightly filtered;
-        // - the far layer: played slower and darker, the heavy downpour on the sea.
-        const rain = gainNode(0.5);
+        // Rain: the recording, twice at once from different points, the second
+        // one slightly slower and darker. Together they sound like a heavier,
+        // wider downpour, and they never line up the same way twice.
+        const rain = gainNode(0.9);
         rain.connect(bus);
 
-        // Wind: a band of low noise that swells with the gusts, and a thin
-        // whistle on top that only appears when it blows hard.
-        const windBand = filterNode('bandpass', 420, 0.9);
-        const wind = gainNode(0.2);
-        noiseLoop(0.63).connect(windBand).connect(wind).connect(bus);
-        const whistleBand = filterNode('bandpass', 1300, 7);
-        const whistle = gainNode(0);
-        noiseLoop(0.81).connect(whistleBand).connect(whistle).connect(bus);
-
-        // Waves: deep noise whose volume rises and falls every few seconds
-        // (two slow oscillators of different speeds, so it never repeats exactly).
-        const waves = gainNode(0.3);
-        noiseLoop(0.41).connect(filterNode('lowpass', 380)).connect(waves).connect(bus);
-        for (const [speed, depth] of [[0.13, 0.14], [0.19, 0.09]]) {
-            const lfo = context.createOscillator();
-            lfo.frequency.value = speed;
-            lfo.connect(gainNode(depth)).connect(waves.gain);
-            lfo.start();
-        }
-
-        // Inside the bridge only: rain drumming on the roof and the windows,
-        // and the low hum of the ship. They skip the muffling filter.
-        // The roof (bridge only): the near rain played a bit slower through a
-        // band of steel resonance, so the drops sound like they hit metal and glass.
+        // Inside the bridge only: the rain drumming on the roof and windows
+        // (the recording through a band of metal resonance), and the low hum
+        // of the ship. They skip the muffling filter.
         const roof = gainNode(settings.roof);
         roof.connect(master);
 
-        rainSamples.then(([near, far]) => {
-            rainLoop(near).connect(filterNode('highpass', 250)).connect(filterNode('lowpass', 7000)).connect(rain);
-            rainLoop(far, 0.7).connect(filterNode('lowpass', 1800)).connect(gainNode(0.7)).connect(rain);
-            rainLoop(near, 0.82).connect(filterNode('bandpass', 1500, 0.8)).connect(roof);
-        });
+        rainBytes
+            .then(bytes => context.decodeAudioData(bytes))
+            .then(buffer => {
+                rainLoop(buffer, 1, 0).connect(filterNode('highpass', 90)).connect(rain);
+                rainLoop(buffer, 0.9, 0.5).connect(filterNode('lowpass', 2200)).connect(gainNode(0.55)).connect(rain);
+                rainLoop(buffer, 1.05, 0.25).connect(filterNode('bandpass', 1600, 0.8)).connect(roof);
+            })
+            .catch(error => console.warn('Rain sound unavailable:', error));
+        thunderBytes
+            .then(bytes => context.decodeAudioData(bytes))
+            .then(buffer => { thunderBuffer = buffer; })
+            .catch(error => console.warn('Thunder sound unavailable:', error));
+
         const hum = gainNode(settings.hum);
         for (const frequency of [55, 82.5]) {
             const osc = context.createOscillator();
@@ -352,7 +264,7 @@ export function createSound() {
         }
         hum.connect(master);
 
-        ambience = { bus, tone, rain, wind, windBand, whistle, whistleBand, roof, hum };
+        ambience = { bus, tone, rain, roof, hum };
     }
 
     /** Moves an audio parameter smoothly to a new value (a crossfade). */
@@ -385,11 +297,7 @@ export function createSound() {
                 return;   // a few updates per second are plenty
             }
             lastGustUpdate = context.currentTime;
-            glide(ambience.wind.gain, 0.08 + 0.35 * gust * gust, 0.6);
-            glide(ambience.windBand.frequency, 300 + 420 * gust, 0.6);
-            glide(ambience.whistle.gain, 0.07 * gust * gust * gust, 0.6);
-            glide(ambience.whistleBand.frequency, 1100 + 500 * gust, 0.6);
-            glide(ambience.rain.gain, 0.4 + 0.25 * gust, 0.6);   // gusts drive the rain harder
+            glide(ambience.rain.gain, 0.75 + 0.3 * gust, 0.8);   // gusts drive the rain harder
         },
 
         /**
@@ -398,42 +306,30 @@ export function createSound() {
          * to the flash). Close strikes crack; distant ones only roll.
          */
         thunder(distance) {
-            if (!ready()) return;
+            if (!ready() || !thunderBuffer) return;
             const at = Math.min(distance / SPEED_OF_SOUND, 4);
             const close = Math.min(1, Math.max(0, 1 - (distance - 520) / 1000));   // 1 = very close
             const start = context.currentTime + at;
 
-            // The long roll: low noise whose volume wobbles at random while it dies away.
-            const duration = 3.2 + 2.6 * (1 - close) + Math.random();
+            // The recorded thunderclap. Close strikes play it from the start,
+            // with the sharp crack, loud and bright. Distant ones skip the crack
+            // and only roll: quieter, darker, shorter. A small random change of
+            // speed makes every strike sound a little different.
             const source = context.createBufferSource();
-            source.buffer = noiseBuffer;
-            source.loop = true;
-            const filter = filterNode('lowpass', 140 + 420 * close);
-            filter.frequency.setValueAtTime(140 + 420 * close, start);
-            filter.frequency.exponentialRampToValueAtTime(55, start + duration);
+            source.buffer = thunderBuffer;
+            source.playbackRate.value = 0.88 + Math.random() * 0.2;
+            const offset = close > 0.5 ? 0 : 0.6 + Math.random() * 0.8;
+            const length = 12 + 12 * close;   // seconds of roll
+            const filter = filterNode('lowpass', 700 + 9000 * close * close);
             const gain = gainNode(0);
-            const steps = 28;
-            const curve = new Float32Array(steps);
-            const volume = 0.55 + 0.45 * close;
-            for (let i = 0; i < steps; i++) {
-                const t = i / (steps - 1);
-                const body = Math.min(1, t * 9) * Math.pow(1 - t, 1.6);
-                curve[i] = volume * body * (0.5 + 0.5 * Math.random());
-            }
-            curve[steps - 1] = 0;
-            gain.gain.setValueCurveAtTime(curve, start, duration);
+            const volume = 0.35 + 0.65 * close;
+            gain.gain.setValueAtTime(0, start);
+            gain.gain.linearRampToValueAtTime(volume, start + 0.06);
+            gain.gain.setValueAtTime(volume, start + length - 4);
+            gain.gain.linearRampToValueAtTime(0, start + length);
             source.connect(filter).connect(gain).connect(effectsBus);
-            source.start(start, Math.random() * 2);
-            source.stop(start + duration + 0.1);
-            thump({ at, duration: 1.6, volume: 0.3 + 0.4 * close, from: 62, to: 24 });
-
-            // The crack: only when the bolt is close enough.
-            if (close > 0.4) {
-                for (const [delay, level] of [[0, 1], [0.07, 0.5], [0.17, 0.7]]) {
-                    noise({ at: at + delay, duration: 0.28, volume: 0.55 * close * level,
-                        type: 'bandpass', from: 3200, to: 500, q: 0.6 });
-                }
-            }
+            source.start(start, offset);
+            source.stop(start + length + 0.1);
         },
 
         /** A gun firing, `distance` world units from the listener. */
