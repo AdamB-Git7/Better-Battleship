@@ -6,8 +6,13 @@
 //   storm ambience (rain, wind, waves) --> ambience filter -------------------+--> master --> limiter --> speakers
 //   bridge-only layers (rain on the roof, hull hum) ---------------------------+
 //
+//   background battle (distant guns, flak, plane engines) --> background gain --> effects filter
+//
 // - "master" is the single volume knob; SOUND ON / OFF simply turns it to 0.
 // - The limiter (a compressor) keeps thunder + explosion + ambience from clipping.
+// - The background battle has its own small volume knob in front of the effects
+//   filter, so it always stays behind the player's own guns, the thunder and
+//   the pirate.
 // - The two filters change with the place: on the bridge the storm is heard
 //   through steel and glass (muffled), in the aerial view it is open and wide.
 //
@@ -19,16 +24,23 @@ const SPEED_OF_SOUND = 340;   // world units per second, for the thunder delay
 // How each place sounds: ambience volume and brightness, effects brightness,
 // and the two layers that only exist inside the bridge.
 const PLACES = {
-    lobby: { ambience: 0.32, ambienceTone: 6000, effectsTone: 16000, roof: 0, hum: 0 },
-    aerial: { ambience: 0.8, ambienceTone: 15000, effectsTone: 18000, roof: 0, hum: 0 },
-    bridge: { ambience: 0.6, ambienceTone: 650, effectsTone: 2600, roof: 0.11, hum: 0.035 }
+    lobby: { ambience: 0.32, ambienceTone: 6000, effectsTone: 16000, roof: 0, hum: 0, background: 0.45 },
+    aerial: { ambience: 0.8, ambienceTone: 15000, effectsTone: 18000, roof: 0, hum: 0, background: 1 },
+    bridge: { ambience: 0.6, ambienceTone: 650, effectsTone: 2600, roof: 0.11, hum: 0.035, background: 0.85 }
 };
+
+const ENGINE_NOTES = [86, 92.5, 43];   // two slightly detuned engines and their octave below
 
 export function createSound() {
     let context = null;
     let noiseBuffer = null;
     let master = null;
     let effectsBus = null;
+    let backgroundBus = null;   // everything that belongs to the battle in the background
+    let engine = null;          // the drone of the planes, once started
+    let lastDistant = 0;        // when the last distant boom / flak pop was started
+    let lastFlak = 0;
+    let lastEngineUpdate = 0;
     let ambience = null;        // the nodes of the storm ambience, once started
     let muted = false;
     let place = 'lobby';
@@ -62,7 +74,10 @@ export function createSound() {
             effectsBus.type = 'lowpass';
             effectsBus.frequency.value = PLACES[place].effectsTone;
             effectsBus.connect(master);
+            backgroundBus = gainNode(PLACES[place].background);
+            backgroundBus.connect(effectsBus);
             startAmbience();
+            startEngine();
         }
         if (context.state === 'suspended') {
             context.resume();
@@ -99,9 +114,10 @@ export function createSound() {
 
     /**
      * A burst of filtered noise that fades out.
-     * options: at (seconds from now), duration, volume, type, from / to (filter sweep), q
+     * options: at (seconds from now), duration, volume, type, from / to (filter sweep), q,
+     *          out (where it plays: the effects filter unless told otherwise)
      */
-    function noise({ at = 0, duration, volume, type, from, to, q = 0.7 }) {
+    function noise({ at = 0, duration, volume, type, from, to, q = 0.7, out = effectsBus }) {
         const start = context.currentTime + at;
         const source = context.createBufferSource();
         source.buffer = noiseBuffer;
@@ -111,13 +127,13 @@ export function createSound() {
         const gain = gainNode(0);
         gain.gain.setValueAtTime(volume, start);
         gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
-        source.connect(filter).connect(gain).connect(effectsBus);
+        source.connect(filter).connect(gain).connect(out);
         source.start(start, Math.random() * 2);
         source.stop(start + duration);
     }
 
     /** A low sine "thump" that drops in pitch. */
-    function thump({ at = 0, duration, volume, from, to }) {
+    function thump({ at = 0, duration, volume, from, to, out = effectsBus }) {
         const start = context.currentTime + at;
         const osc = context.createOscillator();
         osc.frequency.setValueAtTime(from, start);
@@ -125,7 +141,7 @@ export function createSound() {
         const gain = gainNode(0);
         gain.gain.setValueAtTime(volume, start);
         gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
-        osc.connect(gain).connect(effectsBus);
+        osc.connect(gain).connect(out);
         osc.start(start);
         osc.stop(start + duration);
     }
@@ -136,6 +152,41 @@ export function createSound() {
     }
 
     const ready = () => context && context.state === 'running' && !muted;
+
+    /** How loud something far away in the background battle is: 1 close by, 0.12 on the horizon. */
+    function farness(distance) {
+        return Math.max(0.12, 1 / (1 + Math.pow(distance / 450, 2)));
+    }
+
+    /** Sound is slower than light: a distant gun is heard after its flash (at most 3.5 s later). */
+    const travel = distance => Math.min(distance / SPEED_OF_SOUND, 3.5);
+
+    // ---- Plane engines ---------------------------------------------------------
+
+    /**
+     * One continuous drone for all the planes: a few low saw-tooth notes
+     * through a low-pass filter, with a fast flutter (the propellers). It is
+     * silent until setEngine() turns it up.
+     */
+    function startEngine() {
+        const volume = gainNode(0);
+        const tone = filterNode('lowpass', 300);
+        const flutter = gainNode(1);
+        const oscillators = ENGINE_NOTES.map((frequency, index) => {
+            const osc = context.createOscillator();
+            osc.type = index < 2 ? 'sawtooth' : 'triangle';
+            osc.frequency.value = frequency;
+            osc.connect(tone);
+            osc.start();
+            return osc;
+        });
+        const lfo = context.createOscillator();
+        lfo.frequency.value = 23;
+        lfo.connect(gainNode(0.22)).connect(flutter.gain);
+        lfo.start();
+        tone.connect(flutter).connect(volume).connect(backgroundBus);
+        engine = { volume, tone, oscillators };
+    }
 
     // ---- Storm ambience --------------------------------------------------------
 
@@ -206,6 +257,7 @@ export function createSound() {
             glide(effectsBus.frequency, settings.effectsTone, 1.6);
             glide(ambience.roof.gain, settings.roof, 1.6);
             glide(ambience.hum.gain, settings.hum, 1.6);
+            glide(backgroundBus.gain, settings.background, 1.6);
         },
 
         /** Called every frame with the strength of the wind (0..1), see weather.js. */
@@ -288,6 +340,54 @@ export function createSound() {
             noise({ duration: 1.4, volume: 0.45 * near, type: 'bandpass', from: 2400, to: 500 });
             noise({ at: 0.25, duration: 1.6, volume: 0.25 * near, type: 'highpass', from: 3000, to: 1800 });   // spray falling back
             thump({ duration: 0.4, volume: 0.45 * near, from: 95, to: 38 });
+        },
+
+        // ---- The battle in the background (see scene/battlefield.js) -------------
+        // All of these are quiet on purpose and start at most a few times per second.
+
+        /** Guns of a distant ship: a soft thump and a rumble, heard after a delay. */
+        distantGuns(distance) {
+            if (!ready() || context.currentTime - lastDistant < 0.25) return;
+            lastDistant = context.currentTime;
+            const near = farness(distance);
+            const at = travel(distance);
+            thump({ at, duration: 0.8, volume: 0.3 * near, from: 75, to: 26, out: backgroundBus });
+            noise({ at, duration: 1.8, volume: 0.2 * near, type: 'lowpass', from: 260 + 500 * near, to: 50, out: backgroundBus });
+        },
+
+        /** A distant hit or bomb: longer and deeper than the guns. */
+        distantBlast(distance) {
+            if (!ready() || context.currentTime - lastDistant < 0.25) return;
+            lastDistant = context.currentTime;
+            const near = farness(distance);
+            const at = travel(distance);
+            thump({ at, duration: 1.4, volume: 0.34 * near, from: 60, to: 20, out: backgroundBus });
+            noise({ at, duration: 2.6, volume: 0.26 * near, type: 'lowpass', from: 380 + 600 * near, to: 40, out: backgroundBus });
+        },
+
+        /** An anti-aircraft shell bursting in the sky: a small dry pop. */
+        flak(distance) {
+            if (!ready() || context.currentTime - lastFlak < 0.14) return;
+            lastFlak = context.currentTime;
+            const near = farness(distance);
+            const at = travel(distance);
+            noise({ at, duration: 0.16, volume: 0.09 * near, type: 'bandpass', from: 700, to: 250, q: 1, out: backgroundBus });
+            thump({ at, duration: 0.12, volume: 0.07 * near, from: 110, to: 60, out: backgroundBus });
+        },
+
+        /**
+         * The drone of the closest plane, called every frame.
+         * @param level 0 (no plane near) .. 1 (right overhead)
+         * @param pitch 1 = normal; higher while the plane comes closer, lower while it leaves (Doppler)
+         */
+        setEngine(level, pitch) {
+            if (!engine || context.currentTime - lastEngineUpdate < 0.1) {
+                return;   // ten updates per second are plenty
+            }
+            lastEngineUpdate = context.currentTime;
+            glide(engine.volume.gain, 0.2 * level, 0.35);
+            glide(engine.tone.frequency, 220 + 520 * level, 0.35);
+            engine.oscillators.forEach((osc, index) => glide(osc.frequency, ENGINE_NOTES[index] * pitch, 0.3));
         },
 
         /** Tiny blip played while the pirate's text is typed. */

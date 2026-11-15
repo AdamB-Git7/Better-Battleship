@@ -140,7 +140,9 @@ export function swellAt(x, z, time, heading = 0) {
 
 // ---- The sea mesh ---------------------------------------------------------------
 
-const MAX_GLOWS = 4;   // explosions and fires that light the water
+// Explosions and fires that light the water: slots 0..3 belong to the player's
+// own battle (effects.js), slots 4..5 to the battle in the background (battleFx.js).
+const MAX_GLOWS = 6;
 
 /**
  * A square grid that is fine near the battlefield and stretches to the
@@ -322,7 +324,7 @@ export function createSea(scene, normalsTexture) {
         },
         /**
          * Makes a fire or an explosion shine on the water.
-         * @param index 0..3
+         * @param index 0..5 (see MAX_GLOWS for who owns which slot)
          * @param strength 0 = off
          */
         setGlow(index, position, strength) {

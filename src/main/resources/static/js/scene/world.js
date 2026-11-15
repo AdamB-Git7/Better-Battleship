@@ -1,5 +1,6 @@
 // The 3D world: creates the renderer, builds every part of the scene (storm,
-// sea, grid, ships, fog, effects, bridge, holographic board, camera) and runs
+// sea, grid, ships, fog, effects, the battle in the background, bridge,
+// holographic board, camera) and runs
 // the render loop.
 //
 // main.js talks to the scene only through the object returned here.
@@ -13,6 +14,7 @@ import { createGrid } from './grid.js';
 import { createFleet } from './fleet.js';
 import { createFog } from './fog.js';
 import { createEffects } from './effects.js';
+import { createBattlefield } from './battlefield.js';
 import { createCameraRig } from './camera.js';
 import { createBridge } from './bridge.js';
 import { createHoloBoard } from './holoBoard.js';
@@ -44,6 +46,7 @@ export async function createWorld(canvas, sound, onProgress) {
     const fleet = createFleet(scene);
     const fog = createFog(scene);
     const effects = createEffects(scene, sound, sea);
+    const battlefield = createBattlefield(scene, sound, sea);   // decoration only: knows nothing of the game
     const bridge = createBridge(scene);
     const holo = createHoloBoard(bridge.interior, bridge.floorY);
     fog.setBridgeMode(true);   // the game starts behind the menu
@@ -53,6 +56,7 @@ export async function createWorld(canvas, sound, onProgress) {
         renderer.setSize(window.innerWidth, window.innerHeight);
         rig.resize(window.innerWidth, window.innerHeight);
         effects.resize(renderer.domElement.height);
+        battlefield.resize(renderer.domElement.height);
     }
     window.addEventListener('resize', resize);
     resize();
@@ -72,6 +76,7 @@ export async function createWorld(canvas, sound, onProgress) {
         fleet.update(dt, time);
         fog.update(dt, time);
         effects.update(dt, time, rig.camera);
+        battlefield.update(dt, time, rig.camera);
         bridge.update(dt, time);
         holo.update(dt, time);
         rig.update(dt, time);
