@@ -5,6 +5,13 @@
 //   backgroundFleet.js   squadrons shelling each other, escorts, wrecks, searchlights, flares
 //   aircraft.js          strike flights, the patrol, bombs, flak, planes shot down
 //   distantModels.js     the one-piece ship and plane models they use
+//   coast.js             the land on the horizon: burning harbour, lighthouse, coastal guns
+//   convoy.js            merchant ships under escort, barrage balloons, a burning tanker
+//   smallCraft.js        torpedo boats racing round the battle, and their torpedoes
+//   flotsam.js           buoys, mines, lifeboats, wreckage, burning oil
+//   mist.js              curtains of rain at different distances
+//   propModels.js        the one-piece models of all those
+//   billboards.js        big glows and smoke pillars; wakes.js: all the wakes; beams.js: light beams
 //
 // It is pure decoration with its own random life:
 //  - it never touches the play zones, the sea between them or the fog bank
@@ -14,9 +21,9 @@
 //  - it goes on by itself behind the menu, during placement and during the
 //    battle, whatever the players do.
 //
-// Cost: about 30 draw calls (one per ship, one for all wakes, two for all
-// planes, one for all particles, one per searchlight), no extra lights and
-// no shadows.
+// Cost: about 80 draw calls (one per ship, one for all wakes, two for all
+// planes, one for all particles, one per light beam, one per kind of floating
+// object, a handful for the coast), no extra lights and no shadows.
 
 import { createBattleFx } from './battleFx.js';
 import { createWakes } from './wakes.js';

@@ -20,8 +20,8 @@
 // Photosensitivity: the inland glows rise and fall smoothly, seconds apart;
 // the gun flashes go through the flash limiter of battleFx.js.
 //
-// Cost: 7 draw calls (land, skyline, town lights, lighthouse, 4 beams... the
-// glows and smoke pillars are shared with the rest, see billboards.js).
+// Cost: 9 draw calls (land, skyline, town lights, lighthouse tower and cap,
+// four beams); the glows and smoke pillars are shared, see billboards.js.
 
 import * as THREE from 'three';
 import { reducedMotion } from './battleFx.js';
@@ -271,7 +271,7 @@ export function createCoast(scene, fx, fleet, billboards) {
         }
         // The lamp swells smoothly as a beam swings past (about a second), then dims again.
         const pass = Math.pow(Math.max(0, brightest), reducedMotion ? 12 : 40);
-        billboards.setGlow(lampGlow, 0.35 + (reducedMotion ? 0.9 : 2.4) * pass);
+        billboards.setGlow(lampGlow, 0.35 + (reducedMotion ? 0.7 : 1.5) * pass);
     }
 
     // ---- Harbour searchlights ---------------------------------------------------------
