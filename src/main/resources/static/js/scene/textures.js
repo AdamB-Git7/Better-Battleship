@@ -457,3 +457,35 @@ export function rainGlassTexture() {
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     return texture;
 }
+
+/**
+ * Soft cloudy noise that repeats seamlessly in both directions: grey blobs on
+ * black. Scrolled slowly, it gives the big smoke columns and the curtains of
+ * rain of the background their moving, torn shape.
+ */
+export function cloudNoiseTexture() {
+    const SIZE = 256;
+    const { element, ctx } = canvas(SIZE, SIZE);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, SIZE, SIZE);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 70; i++) {
+        const x = Math.random() * SIZE;
+        const y = Math.random() * SIZE;
+        const radius = 14 + Math.random() * 44;
+        const strength = 0.1 + Math.random() * 0.16;
+        // Draw each blob nine times, shifted by one tile, so it wraps around every edge.
+        for (let ox = -SIZE; ox <= SIZE; ox += SIZE) {
+            for (let oy = -SIZE; oy <= SIZE; oy += SIZE) {
+                const gradient = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, radius);
+                gradient.addColorStop(0, `rgba(255,255,255,${strength})`);
+                gradient.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x + ox - radius, y + oy - radius, radius * 2, radius * 2);
+            }
+        }
+    }
+    const texture = new THREE.CanvasTexture(element);
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+}

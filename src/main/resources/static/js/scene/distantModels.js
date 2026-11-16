@@ -39,7 +39,7 @@ silhouetteMaterial.onBeforeCompile = shader => {
  * every corner of part i the colour colors[i]. `shade` may change the colour
  * of a single corner (it gets the colour to edit and the height of the corner).
  */
-function mergeWithColors(geometries, colors, shade) {
+export function mergeWithColors(geometries, colors, shade) {
     let count = 0;
     for (const geometry of geometries) {
         count += geometry.attributes.position.count;
@@ -105,8 +105,8 @@ export function distantShip(type) {
     return shipCache.get(type);
 }
 
-/** A part of the plane, already moved into place. */
-function part(geometry, x, y, z) {
+/** A part of a model, already moved into place (and made non-indexed, as mergeWithColors wants). */
+export function part(geometry, x, y, z) {
     const copy = geometry.index ? geometry.toNonIndexed() : geometry;
     return copy.translate(x, y, z);
 }

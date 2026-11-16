@@ -18,7 +18,7 @@ import { ZONES, ZONE_SPAN } from '../config.js';
 import { createParticles } from './particles.js';
 import { weather, WIND } from './weather.js';
 
-const POOL_SIZE = 3000;
+const POOL_SIZE = 4500;
 const SEA_FLASH_SLOT = 4;    // sea glow slots 4 and 5 belong to the background (see sea.js)
 const SEA_STEADY_SLOT = 5;
 
@@ -35,6 +35,21 @@ const KEEP_OUT_Z = Math.abs(ZONES.enemy.center.z) + ZONE_SPAN / 2 + 88;   // 200
 /** True if (x, z) is in or around the play zones, where the background must stay away. */
 export function nearPlayArea(x, z, margin = 0) {
     return Math.abs(x) < KEEP_OUT_X + margin && Math.abs(z) < KEEP_OUT_Z + margin;
+}
+
+// The fog bank over the enemy zone is wider than the keep-out box on the
+// north side: nothing that floats may be put in it either.
+const FOG_BANK_X = 216;
+const FOG_BANK_NORTH = -236;
+const FOG_BANK_SOUTH = 6;
+
+/**
+ * True if (x, z) is free water for the background: outside the keep-out box
+ * AND outside the fog bank. Everything that floats or sails checks this.
+ */
+export function clearOfPlay(x, z, margin = 0) {
+    const inFog = Math.abs(x) < FOG_BANK_X + margin && z > FOG_BANK_NORTH - margin && z < FOG_BANK_SOUTH + margin;
+    return !inFog && !nearPlayArea(x, z, margin);
 }
 
 /** A fire that keeps burning: just three timers, advanced by fx.burn(). */
@@ -245,6 +260,36 @@ export function createBattleFx(scene, sound, sea) {
     }
 
     /**
+     * A lamp that glows for a moment and fades (buoys, mast lights, lifeboats).
+     * It fades in and out slowly, so a blinking buoy never flickers.
+     */
+    function lamp(x, y, z, color, size = 3, life = 1.1) {
+        spawn({ position: at.set(x, y, z), velocity: zero, life, fadeIn: 2.5,
+            size: [size, size], color, opacity: 0.85, additive: true });
+    }
+
+    /** White water thrown up by a fast boat, or the bubbles a torpedo leaves: a short-lived puff on the surface. */
+    function foam(x, z, size = 1, life = 2.2) {
+        if (nearPlayArea(x, z)) {
+            return;
+        }
+        spawn({ position: at.set(x + spread(size), 0.6, z + spread(size)), velocity: burst(1.5, 0.6), life,
+            size: [2.2 * size, 5 * size], color: 0xc9d6de, opacity: 0.5, smoke: true, wind: 0.05 });
+    }
+
+    /** A distress rocket from a lifeboat: call every frame with its position while it climbs and drifts down. */
+    function rocket(x, y, z, dt) {
+        spawn({ position: at.set(x, y, z), velocity: zero, life: 0.35, size: [5, 3],
+            color: 0xff4a3a, opacity: 0.7, additive: true });
+        if (Math.random() < dt * 2.5) {
+            spawn({ position: at, velocity: zero, life: 1.4, fadeIn: 2, size: [60, 80],
+                color: 0xff3a2a, opacity: 0.04, additive: true });
+            spawn({ position: at, velocity: burst(2, 2), life: 5, size: [3, 12],
+                color: 0x8b8086, colorEnd: 0x3a3d41, opacity: 0.25, smoke: true, wind: 0.4 });
+        }
+    }
+
+    /**
      * The one steady light that shines on the water (a flare, or the fire
      * closest to the camera). strength 0 switches it off.
      */
@@ -266,7 +311,7 @@ export function createBattleFx(scene, sound, sea) {
     }
 
     return {
-        muzzle, tracer, aaRound, splash, blast, burn, flak, trail, bombTrail, flare, blink, glow,
+        muzzle, tracer, aaRound, splash, blast, burn, flak, trail, bombTrail, flare, blink, glow, lamp, foam, rocket,
         setSteadyGlow, update,
         resize: particles.resize
     };

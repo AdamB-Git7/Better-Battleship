@@ -19,6 +19,10 @@
 // no shadows.
 
 import { createBattleFx } from './battleFx.js';
+import { createWakes } from './wakes.js';
+import { createBillboards } from './billboards.js';
+import { createCoast } from './coast.js';
+import { createConvoys } from './convoy.js';
 import { createBackgroundFleet } from './backgroundFleet.js';
 import { createAircraft } from './aircraft.js';
 
@@ -29,7 +33,11 @@ import { createAircraft } from './aircraft.js';
  */
 export function createBattlefield(scene, sound, sea) {
     const fx = createBattleFx(scene, sound, sea);
-    const fleet = createBackgroundFleet(scene, fx);
+    const wakes = createWakes(scene, 64);            // one sheet of foam per ship or boat, one draw call
+    const billboards = createBillboards(scene);      // the big glows and smoke columns of the horizon
+    const fleet = createBackgroundFleet(scene, fx, wakes);
+    const coast = createCoast(scene, fx, fleet, billboards);
+    const convoys = createConvoys(scene, fx, wakes, billboards);
     const aircraft = createAircraft(scene, fx, fleet, sound);
 
     return {
@@ -37,6 +45,10 @@ export function createBattlefield(scene, sound, sea) {
         update(dt, time, camera) {
             fleet.update(dt, time, camera);
             aircraft.update(dt, time, camera);
+            coast.update(dt, time, camera);
+            convoys.update(dt, time);
+            wakes.update(dt);
+            billboards.update(time);
             fx.update(dt, time, camera);   // last: it draws what the two others asked for
         },
         /** The particles need the height of the canvas (in real pixels) to keep their size. */
