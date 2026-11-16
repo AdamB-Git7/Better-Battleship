@@ -20,8 +20,8 @@
 import * as THREE from 'three';
 import { distantShip, distantMaterial, silhouetteMaterial } from './distantModels.js';
 import { createFire, reducedMotion } from './battleFx.js';
-import { swellAt, WAVE_GLSL, seaUniforms } from './sea.js';
-import { foamTexture, wakeMaskTexture } from './textures.js';
+import { swellAt, waveLift } from './sea.js';
+import { beamMaterial, createBeam } from './beams.js';
 import { weather, WIND } from './weather.js';
 
 // ---- Where everything is -----------------------------------------------------------
@@ -67,93 +67,18 @@ const MAX_OIL_FIRES = 4;
 const MAX_FLARES = 2;
 const BEAM_LENGTH = 420;
 
-// ---- Wakes: one instanced sheet of foam per ship, all in one draw call -------------
-
-const wakeVertex = /* glsl */`
-    ${WAVE_GLSL}
-    attribute float aOpacity;
-    varying vec2 vUv;
-    varying float vOpacity;
-    #include <fog_pars_vertex>
-    void main() {
-        vUv = uv;
-        vOpacity = aOpacity;
-        vec4 world = modelMatrix * instanceMatrix * vec4(position, 1.0);
-        // Same waves as the sea, which is flat far away (see sea.js).
-        float lift = 1.0 - smoothstep(420.0, 1200.0, length(world.xz));
-        world.y = waveSurface(world.xz).x * lift + 0.15;
-        vec4 mvPosition = viewMatrix * world;
-        gl_Position = projectionMatrix * mvPosition;
-        #include <fog_vertex>
-    }
-`;
-const wakeFragment = /* glsl */`
-    uniform sampler2D uFoam;
-    uniform sampler2D uMask;
-    uniform vec2 uScroll;
-    uniform float uFlash;
-    varying vec2 vUv;
-    varying float vOpacity;
-    #include <fog_pars_fragment>
-    void main() {
-        vec3 foam = texture2D(uFoam, vUv * vec2(2.0, 1.0) + uScroll).rgb;
-        float alpha = texture2D(uMask, vUv).r * vOpacity * (0.4 + 0.6 * foam.r);
-        gl_FragColor = vec4(foam * (0.34 + uFlash * 1.2), alpha);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-        #include <fog_fragment>
-    }
-`;
-
-// ---- Searchlights: a long soft cone of light ---------------------------------------
-
-const beamVertex = /* glsl */`
-    varying float vAlong;     // 0 at the lamp, 1 at the far end
-    varying vec3 vNormal;
-    varying vec3 vToEye;
-    varying float vDepth;
-    void main() {
-        vAlong = position.y;
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        vNormal = normalMatrix * normal;
-        vToEye = -mvPosition.xyz;
-        vDepth = -mvPosition.z;
-        gl_Position = projectionMatrix * mvPosition;
-    }
-`;
-const beamFragment = /* glsl */`
-    uniform vec3 uColor;
-    uniform float uPower;
-    uniform float fogDensity;
-    varying float vAlong;
-    varying vec3 vNormal;
-    varying vec3 vToEye;
-    varying float vDepth;
-    void main() {
-        // Bright where we look through the middle of the cone, nothing at its
-        // edges: that is what makes a hollow cone look like a beam in the rain.
-        float through = abs(dot(normalize(vNormal), normalize(vToEye)));
-        float alpha = through * through * pow(1.0 - vAlong, 1.5) * uPower;
-        alpha *= 1.0 - 0.7 * (1.0 - exp(-fogDensity * fogDensity * vDepth * vDepth));
-        gl_FragColor = vec4(uColor * alpha, 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-    }
-`;
-
 const smoothstep = (a, b, x) => {
     const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
     return t * t * (3 - 2 * t);
 };
-/** 1 where the sea has waves, 0 far away where it is flat (same formula as sea.js). */
-const waveLift = (x, z) => 1 - smoothstep(420, 1200, Math.hypot(x, z));
 const pick = list => list[Math.floor(Math.random() * list.length)];
 
 /**
  * @param fx the background effects (battleFx.js)
+ * @param wakes the shared sheet of wakes (wakes.js)
  * @returns {{ update(dt, time, camera), pickTarget(), strike(ship, chance), nearestFarShip(x, z) }}
  */
-export function createBackgroundFleet(scene, fx) {
+export function createBackgroundFleet(scene, fx, wakes) {
     const root = new THREE.Group();
     scene.add(root);
 
@@ -182,7 +107,8 @@ export function createBackgroundFleet(scene, fx) {
             gone: 0,                   // seconds until a replacement arrives (while sunk)
             fire: createFire(),
             fireAt: (Math.random() - 0.5) * 0.5,   // where along the hull the fire is
-            wake: 1
+            wake: 1,                   // 1 = full wake, 0 = none (stopped or sunk)
+            wakeIndex: wakes.reserve()
         };
         ships.push(ship);
         return ship;
@@ -222,37 +148,10 @@ export function createBackgroundFleet(scene, fx) {
         return { ...wreck, fire: createFire() };
     });
 
-    // ---- Wakes ---------------------------------------------------------------
-    const foamScroll = new THREE.Vector2();
-    const wakeGeometry = new THREE.PlaneGeometry(1, 1, 12, 4).rotateX(-Math.PI / 2);
-    const wakeOpacity = new THREE.InstancedBufferAttribute(new Float32Array(ships.length), 1).setUsage(THREE.DynamicDrawUsage);
-    wakeGeometry.setAttribute('aOpacity', wakeOpacity);
-    const wakes = new THREE.InstancedMesh(wakeGeometry, new THREE.ShaderMaterial({
-        vertexShader: wakeVertex,
-        fragmentShader: wakeFragment,
-        uniforms: {
-            ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
-            ...seaUniforms,
-            uFoam: { value: foamTexture() },
-            uMask: { value: wakeMaskTexture() },
-            uScroll: { value: foamScroll }
-        },
-        transparent: true,
-        depthWrite: false,
-        fog: true
-    }), ships.length);
-    wakes.frustumCulled = false;   // the vertices are moved in the shader
-    wakes.renderOrder = -5;
-    root.add(wakes);
-
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
-    const quaternion = new THREE.Quaternion();
-    const size = new THREE.Vector3();
-    const UP = new THREE.Vector3(0, 1, 0);
+    const direction = new THREE.Vector3();
 
     /** Floats one ship on the swell and lays its wake behind it. */
-    function floatShip(ship, index, time, sunk) {
+    function floatShip(ship, time, sunk) {
         const lift = waveLift(ship.x, ship.z);
         const swell = swellAt(ship.x, ship.z, time, ship.heading);
         const afloat = 1 - sunk;
@@ -261,11 +160,8 @@ export function createBackgroundFleet(scene, fx) {
 
         const cos = Math.cos(ship.heading);
         const sin = Math.sin(ship.heading);
-        position.set(ship.x - cos * ship.length * 0.3, 0, ship.z + sin * ship.length * 0.3);
-        quaternion.setFromAxisAngle(UP, ship.heading);
-        size.set(ship.length * 1.5, 1, 15 * ship.scale);
-        wakes.setMatrixAt(index, matrix.compose(position, quaternion, size));
-        wakeOpacity.array[index] = 0.5 * ship.wake * afloat;
+        wakes.set(ship.wakeIndex, ship.x - cos * ship.length * 0.3, ship.z + sin * ship.length * 0.3,
+            ship.heading, ship.length * 1.5, 15 * ship.scale, 0.5 * ship.wake * afloat);
     }
 
     // ---- Squadrons: sailing, burning, sinking, being replaced --------------------
@@ -432,32 +328,14 @@ export function createBackgroundFleet(scene, fx) {
 
     // ---- Searchlights -------------------------------------------------------------
 
-    const beamGeometry = new THREE.CylinderGeometry(24, 1.2, 1, 16, 1, true).translate(0, 0.5, 0);
-    const beamMaterial = new THREE.ShaderMaterial({
-        vertexShader: beamVertex,
-        fragmentShader: beamFragment,
-        uniforms: {
-            ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
-            uColor: { value: new THREE.Color(0xcfe0ff) },
-            uPower: { value: 0.085 }
-        },
-        fog: true,
-        transparent: true,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-        blending: THREE.AdditiveBlending
-    });
-    const direction = new THREE.Vector3();
+    const searchlightMaterial = beamMaterial();
     // One lamp on the leading ships of the far squadrons. It sweeps the sky on
     // the side AWAY from the play area, so a beam never crosses it.
     const searchlights = [groups[1].ships[0], groups[3].ships[0], groups[5].ships[0], groups[5].ships[2]].map((ship, index) => {
-        const mesh = new THREE.Mesh(beamGeometry, beamMaterial);
-        mesh.scale.set(1, BEAM_LENGTH, 1);
-        mesh.frustumCulled = false;
-        mesh.renderOrder = 6;
-        root.add(mesh);
+        const beam = createBeam(searchlightMaterial, BEAM_LENGTH);
+        root.add(beam.mesh);
         const group = groups.find(candidate => candidate.ships.includes(ship));
-        return { mesh, ship, phase: index * 2.1, outward: Math.atan2(group.outZ, group.outX) };
+        return { beam, mesh: beam.mesh, ship, phase: index * 2.1, outward: Math.atan2(group.outZ, group.outX) };
     });
 
     function updateSearchlights(time) {
@@ -471,7 +349,7 @@ export function createBackgroundFleet(scene, fx) {
             const up = 0.85 + 0.3 * Math.sin(time * 0.13 + light.phase * 2);
             direction.set(Math.cos(around) * Math.cos(up), Math.sin(up), Math.sin(around) * Math.cos(up));
             light.mesh.position.set(ship.x, 8 * ship.scale, ship.z);
-            light.mesh.quaternion.setFromUnitVectors(UP, direction);
+            light.beam.point(direction);
         }
     }
 
@@ -512,19 +390,15 @@ export function createBackgroundFleet(scene, fx) {
     // ---- Every frame ------------------------------------------------------------------
 
     function update(dt, time, camera) {
-        foamScroll.x += dt * 0.12;
-        let index = 0;
         for (const group of groups) {
             for (const ship of group.ships) {
                 updateSquadronShip(ship, group, dt);
-                floatShip(ship, index++, time, ship.sinking < 0 ? 0 : smoothstep(0, 1, ship.sinking / SINK_SECONDS));
+                floatShip(ship, time, ship.sinking < 0 ? 0 : smoothstep(0, 1, ship.sinking / SINK_SECONDS));
             }
         }
         for (const ship of escorts) {
-            floatShip(ship, index++, time, 0);
+            floatShip(ship, time, 0);
         }
-        wakes.instanceMatrix.needsUpdate = true;
-        wakeOpacity.needsUpdate = true;
 
         for (const wreck of wrecks) {
             fx.burn(wreck.fire, wreck.x, 4, wreck.z, 0.9, dt);

@@ -138,6 +138,16 @@ export function swellAt(x, z, time, heading = 0) {
     return swell;
 }
 
+/**
+ * 1 where the sea has real waves (near the play area), falling to 0 far away,
+ * where the surface is flat (the same formula as in the sea's vertex shader).
+ * Anything that floats far out multiplies its bobbing by this.
+ */
+export function waveLift(x, z) {
+    const t = Math.min(1, Math.max(0, (Math.hypot(x, z) - 420) / 780));
+    return 1 - t * t * (3 - 2 * t);
+}
+
 // ---- The sea mesh ---------------------------------------------------------------
 
 // Explosions and fires that light the water: slots 0..3 belong to the player's
