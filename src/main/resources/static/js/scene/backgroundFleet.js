@@ -1,7 +1,7 @@
 // The warships of the battle in the background.
 //
-// Six squadrons steam in line on big oval tracks around the play area, in
-// three pairs (west, east and far to the north, behind the fog bank). The two
+// Six squadrons (four or five ships each) steam in line on big oval tracks
+// around the play area, in three pairs (west, east and far to the north, behind the fog bank). The two
 // squadrons of a pair shell each other: gun flashes, tracers arcing across,
 // water columns, hits, fires with tall smoke blown by the wind. A ship that
 // has taken too much falls out of line and sinks, leaving burning oil, and a
@@ -32,28 +32,30 @@ import { weather, WIND } from './weather.js';
 // half-depth rz along z), which way round, how big its ships are drawn (far
 // ones are enlarged a little so they still read in the haze) and its enemy.
 const GROUPS = [
-    { centre: [-310, -190], rx: 62, rz: 190, turn: 1, scale: 1.15, far: false, foe: 1, types: ['CRUISER', 'BATTLESHIP', 'DESTROYER'] },
-    { centre: [-575, -300], rx: 85, rz: 220, turn: -1, scale: 1.7, far: true, foe: 0, types: ['BATTLESHIP', 'CRUISER', 'DESTROYER'] },
-    { centre: [310, -190], rx: 62, rz: 190, turn: -1, scale: 1.15, far: false, foe: 3, types: ['BATTLESHIP', 'DESTROYER', 'CRUISER'] },
-    { centre: [575, -300], rx: 85, rz: 220, turn: 1, scale: 1.7, far: true, foe: 2, types: ['CRUISER', 'BATTLESHIP', 'DESTROYER'] },
-    { centre: [0, -395], rx: 185, rz: 70, turn: 1, scale: 1.5, far: false, foe: 5, types: ['CRUISER', 'DESTROYER', 'BATTLESHIP'] },
-    { centre: [0, -640], rx: 330, rz: 80, turn: -1, scale: 1.9, far: true, foe: 4, types: ['BATTLESHIP', 'CARRIER', 'CRUISER', 'DESTROYER'] }
+    { centre: [-310, -190], rx: 62, rz: 190, turn: 1, scale: 1.15, far: false, foe: 1, types: ['CRUISER', 'BATTLESHIP', 'DESTROYER', 'DESTROYER'] },
+    { centre: [-575, -300], rx: 85, rz: 220, turn: -1, scale: 1.7, far: true, foe: 0, types: ['BATTLESHIP', 'CRUISER', 'DESTROYER', 'CRUISER'] },
+    { centre: [310, -190], rx: 62, rz: 190, turn: -1, scale: 1.15, far: false, foe: 3, types: ['BATTLESHIP', 'DESTROYER', 'CRUISER', 'CRUISER'] },
+    { centre: [575, -300], rx: 85, rz: 220, turn: 1, scale: 1.7, far: true, foe: 2, types: ['CRUISER', 'BATTLESHIP', 'DESTROYER', 'DESTROYER'] },
+    { centre: [0, -395], rx: 185, rz: 70, turn: 1, scale: 1.5, far: false, foe: 5, types: ['CRUISER', 'DESTROYER', 'BATTLESHIP', 'DESTROYER'] },
+    { centre: [0, -640], rx: 330, rz: 80, turn: -1, scale: 1.9, far: true, foe: 4, types: ['BATTLESHIP', 'CARRIER', 'CRUISER', 'DESTROYER', 'BATTLESHIP'] }
 ];
 
 // Escorts of the player's own task force: they hold station beside his zone,
 // well outside the grid, bows to the enemy. Nobody shoots at them.
 const ESCORTS = [
     { type: 'DESTROYER', x: -124, z: 44 },
-    { type: 'CRUISER', x: -172, z: 118 },
+    { type: 'CRUISER', x: -146, z: 150 },
     { type: 'DESTROYER', x: 128, z: 70 },
-    { type: 'CRUISER', x: 176, z: 142 }
+    { type: 'CRUISER', x: 148, z: 172 }
 ];
 
 // Ships lost before the player arrived: half-sunk hulks that still burn.
 const WRECKS = [
     { type: 'DESTROYER', x: -440, z: 20, heading: 0.9, scale: 1.3 },
     { type: 'CRUISER', x: 425, z: -250, heading: 2.4, scale: 1.4 },
-    { type: 'DESTROYER', x: -130, z: -520, heading: -0.5, scale: 1.6 }
+    { type: 'DESTROYER', x: -130, z: -520, heading: -0.5, scale: 1.6 },
+    { type: 'CRUISER', x: 525, z: 150, heading: 1.2, scale: 1.5 },
+    { type: 'CRUISER', x: -545, z: 330, heading: 2.0, scale: 1.4 }
 ];
 
 const SPEED = 4.5;             // world units per second along the track

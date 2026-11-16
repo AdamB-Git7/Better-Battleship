@@ -464,6 +464,13 @@ export function rainGlassTexture() {
  * rain of the background their moving, torn shape.
  */
 export function cloudNoiseTexture() {
+    cloudNoise ??= drawCloudNoise();   // drawn once, shared by everyone who asks
+    return cloudNoise;
+}
+
+let cloudNoise = null;
+
+function drawCloudNoise() {
     const SIZE = 256;
     const { element, ctx } = canvas(SIZE, SIZE);
     ctx.fillStyle = '#000';

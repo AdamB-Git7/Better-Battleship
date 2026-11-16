@@ -25,11 +25,13 @@ import { swellAt, waveLift } from './sea.js';
 import { weather, WIND } from './weather.js';
 
 // The two ovals (centre, half-width rx, half-depth rz) and which way round.
-// With the columns 14 units to each side they cover x = 196..328 and z = 21..429.
-const TRACKS = [
-    { centre: [-262, 225], rx: 52, rz: 190, turn: 1 },
-    { centre: [262, 225], rx: 52, rz: 190, turn: -1 }
+// With the columns 14 units to each side they cover x = 164..296 and z = 21..429:
+// the inner column passes close beside the player's zone, the outer one far out.
+export const CONVOY_TRACKS = [
+    { centre: [-230, 225], rx: 52, rz: 190, turn: 1 },
+    { centre: [230, 225], rx: 52, rz: 190, turn: -1 }
 ];
+const TRACKS = CONVOY_TRACKS;
 
 // The ships of one convoy: how far behind the leader, and how far out of the
 // line (positive = the outer column).
@@ -225,8 +227,8 @@ export function createConvoys(scene, fx, wakes, billboards) {
         { fire: createFire(), dx: 6, dz: -3, y: 9, size: 1.7 },      // the cargo, amidships
         { fire: createFire(), dx: 44, dz: 30, y: 1.5, size: 1.0 }    // oil burning on the water beside it
     ];
-    billboards.addGlow(STRAGGLER.x + 6, 20, STRAGGLER.z - 3, 130, 0xff8a30, 1.5, 1);
-    billboards.addGlow(STRAGGLER.x + 6, 48, STRAGGLER.z - 3, 460, 0xff5a1c, 0.36, 0.7);
+    billboards.addGlow(STRAGGLER.x + 6, 20, STRAGGLER.z - 3, 100, 0xff8a30, 1.1, 1);
+    billboards.addGlow(STRAGGLER.x + 6, 48, STRAGGLER.z - 3, 420, 0xff8a3a, 0.13, 0.7);
     billboards.addPillar(STRAGGLER.x + 6, 10, STRAGGLER.z - 3, 40, 430, 1);
 
     // A check at start-up: a convoy must never be able to enter the play area or the fog.

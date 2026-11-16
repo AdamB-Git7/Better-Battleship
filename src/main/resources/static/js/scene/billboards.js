@@ -53,8 +53,8 @@ const pillarFragment = /* glsl */`
         float seed = vShape.y;
         float tall = vShape.x / 160.0;
         // Two layers of noise climbing at different speeds: billows that roll upwards.
-        float big = texture2D(uNoise, vec2(vUv.x * 0.5 + seed, vUv.y * tall * 0.7 - uTime * 0.035 + seed * 3.0)).r;
-        float fine = texture2D(uNoise, vec2(vUv.x * 1.1 - seed, vUv.y * tall * 1.6 - uTime * 0.06)).r;
+        float big = min(1.0, 1.9 * texture2D(uNoise, vec2(vUv.x * 0.5 + seed, vUv.y * tall * 0.7 - uTime * 0.035 + seed * 3.0)).r);
+        float fine = min(1.0, 1.9 * texture2D(uNoise, vec2(vUv.x * 1.1 - seed, vUv.y * tall * 1.6 - uTime * 0.06)).r);
         float middle = 1.0 - abs(vUv.x * 2.0 - 1.0);             // 1 on the axis of the column, 0 at its edges
         float body = smoothstep(0.08, 0.75, middle + (big - 0.5) * 0.9 + (fine - 0.5) * 0.35);
         float foot = smoothstep(0.0, 0.03, vUv.y);
@@ -63,7 +63,7 @@ const pillarFragment = /* glsl */`
         // Nearly black, a little lighter where the smoke is thin; orange at the
         // foot, where the fire lights it from below; grey when lightning strikes.
         vec3 color = mix(vec3(0.012, 0.012, 0.014), vec3(0.05, 0.052, 0.058), fine);
-        color += vec3(1.0, 0.33, 0.06) * pow(1.0 - vUv.y, 7.0) * (0.25 + 0.6 * big);
+        color += vec3(1.0, 0.36, 0.08) * pow(1.0 - vUv.y, 16.0) * (0.15 + 0.4 * big);
         color += vec3(0.5, 0.56, 0.7) * uFlash * 0.22 * (0.4 + fine);
         gl_FragColor = vec4(color, alpha);
         #include <tonemapping_fragment>
@@ -149,7 +149,8 @@ export function createBillboards(scene, { maxPillars = 12, maxGlows = 40, haze =
         },
         fog: true,
         transparent: true,
-        depthWrite: false
+        depthWrite: false,
+        side: THREE.DoubleSide          // the sheet turns with the camera: either face may be the one we see
     });
     const pillarMesh = new THREE.Mesh(pillars.geometry, pillarMaterial);
     pillarMesh.frustumCulled = false;   // the shader places the sheets

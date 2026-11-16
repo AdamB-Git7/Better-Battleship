@@ -23,6 +23,9 @@ import { createWakes } from './wakes.js';
 import { createBillboards } from './billboards.js';
 import { createCoast } from './coast.js';
 import { createConvoys } from './convoy.js';
+import { createSmallCraft } from './smallCraft.js';
+import { createFlotsam } from './flotsam.js';
+import { createMist } from './mist.js';
 import { createBackgroundFleet } from './backgroundFleet.js';
 import { createAircraft } from './aircraft.js';
 
@@ -38,6 +41,9 @@ export function createBattlefield(scene, sound, sea) {
     const fleet = createBackgroundFleet(scene, fx, wakes);
     const coast = createCoast(scene, fx, fleet, billboards);
     const convoys = createConvoys(scene, fx, wakes, billboards);
+    const craft = createSmallCraft(scene, fx, fleet, wakes);
+    const flotsam = createFlotsam(scene, fx);
+    const mist = createMist(scene);
     const aircraft = createAircraft(scene, fx, fleet, sound);
 
     return {
@@ -47,6 +53,9 @@ export function createBattlefield(scene, sound, sea) {
             aircraft.update(dt, time, camera);
             coast.update(dt, time, camera);
             convoys.update(dt, time);
+            craft.update(dt, time);
+            flotsam.update(dt, time);
+            mist.update(time);
             wakes.update(dt);
             billboards.update(time);
             fx.update(dt, time, camera);   // last: it draws what the two others asked for
@@ -57,6 +66,8 @@ export function createBattlefield(scene, sound, sea) {
         },
         // For the ?debug hook only (to jump to a plane or a ship when testing).
         fleet,
-        aircraft
+        aircraft,
+        convoys,
+        craft
     };
 }

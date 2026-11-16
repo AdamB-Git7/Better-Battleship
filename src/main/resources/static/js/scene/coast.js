@@ -30,7 +30,7 @@ import { weather } from './weather.js';
 
 const DEG = Math.PI / 180;
 const CENTRE_Z = -100;         // the coast curves around this point (a little north of the play area)
-const HAZE = 0.5;              // the land feels only half of the distance haze (else it would vanish)
+const HAZE = 0.44;             // the land feels only half of the distance haze (else it would vanish)
 
 /** A point on the sea given as a compass bearing (0 = north, positive = east) and a distance. */
 function polar(bearing, distance, target = new THREE.Vector3()) {
@@ -85,7 +85,7 @@ const landFragment = /* glsl */`
         float depth = vDepth * uHaze;
         float haze = 1.0 - exp(-fogDensity * fogDensity * depth * depth);
         // Spray and mist lie on the water at the foot of the cliffs.
-        haze += (1.0 - haze) * 0.45 * (1.0 - smoothstep(0.0, 34.0, vHeight));
+        haze += (1.0 - haze) * 0.35 * (1.0 - smoothstep(0.0, 26.0, vHeight));
         gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, haze);
     }
 `;
@@ -226,13 +226,13 @@ export function createCoast(scene, fx, fleet, billboards) {
     // The three big fires: flames behind the skyline, a wide glow, a column of smoke.
     for (const bearing of FIRES) {
         polar(bearing, TOWN.distance + 14, point);          // between the skyline and the cliffs
-        billboards.addGlow(point.x, 26, point.z, 150, 0xff8a30, 1.5, 1);
-        billboards.addGlow(point.x, 60, point.z, 520, 0xff5a1c, 0.34, 0.7);
+        billboards.addGlow(point.x, 24, point.z, 110, 0xff9a40, 0.85, 1);
+        billboards.addGlow(point.x, 60, point.z, 460, 0xff8a3a, 0.11, 0.7);
         billboards.addPillar(point.x, 12, point.z, 52 + random() * 24, 430 + random() * 140, 0.95);
     }
     // The whole town lights the underside of the clouds (the glow is behind the hills, which show against it).
     polar((TOWN.from + TOWN.to) / 2, 1450, point);
-    billboards.addGlow(point.x, 300, point.z, 1500, 0xff5a22, 0.13, 0.5);
+    billboards.addGlow(point.x, 260, point.z, 1500, 0xff8a40, 0.05, 0.5);
 
     // ---- The lighthouse ------------------------------------------------------------
     polar(LIGHTHOUSE.bearing, LIGHTHOUSE.distance, point);
@@ -351,7 +351,7 @@ export function createCoast(scene, fx, fleet, billboards) {
     }
 
     // ---- Artillery inland: the sky behind the hills glows, slowly -----------------------
-    const inland = [0, 1].map(() => ({ glow: billboards.addGlow(0, 0, 0, 620, 0xffa55a, 0, 0), age: 99, peak: 0 }));
+    const inland = [0, 1].map(() => ({ glow: billboards.addGlow(0, 0, 0, 620, 0xffb070, 0, 0), age: 99, peak: 0 }));
     let inlandTimer = 3;
     const RISE = reducedMotion ? 0.9 : 0.3;      // seconds to full brightness
     const FALL = reducedMotion ? 0.8 : 2.2;      // how fast it dies away (higher = faster)

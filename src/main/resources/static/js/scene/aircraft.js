@@ -5,8 +5,10 @@
 //   his bridge and the whole battlefield), dive on a ship of the distant enemy
 //   squadrons, drop their bombs, and climb away into the haze. A while later
 //   they come back for another run.
-// - One patrol of four planes circles the whole battlefield, well outside the
-//   play area.
+// - Three patrols circle the battlefield, well outside the play area: four
+//   fighters far out, three more lower and closer (they pass near the lobby
+//   camera and beside the bridge), and a stream of seven heavy bombers very
+//   high up, on their way to the coast.
 // - Near the enemy ships the sky fills with flak (dark puffs with a spark) and
 //   tracers climb towards the planes. Now and then a wingman is hit: he trails
 //   fire and smoke and falls into the sea.
@@ -24,9 +26,8 @@ import * as THREE from 'three';
 import { planeModel, distantMaterial } from './distantModels.js';
 import { nearPlayArea } from './battleFx.js';
 
-const STRIKE_FLIGHTS = 3;
+const STRIKE_FLIGHTS = 5;
 const FLIGHT_SIZE = 3;
-const PATROL_SIZE = 4;
 const SPEED = 62;               // world units per second
 const TURN_RATE = 0.45;         // radians per second
 const CRUISE_HEIGHT = 66;       // on the way in, beside the player's fleet
@@ -42,10 +43,16 @@ const WING_TIP = 5.6;
 
 // Where each plane flies in the formation, relative to the leader:
 // [metres behind, metres to the right, metres above].
-const FORMATION = [[0, 0, 0], [11, 10, 1.5], [11, -10, -1.5], [22, 20, 3]];
+const FORMATION = [[0, 0, 0], [11, 10, 1.5], [11, -10, -1.5], [22, 20, 3], [22, -20, -3], [33, 30, 4.5], [33, -30, -4.5]];
 
-// The patrol circles on this oval, far outside the play area.
-const PATROL = { cx: 0, cz: -150, rx: 560, rz: 440, height: 150, points: 12 };
+// The patrols: each one circles on an oval far outside the play area (centre,
+// half-width rx, half-depth rz), at a fixed height. `scale` makes the planes
+// bigger (the bombers), `start` is where on the oval they begin (radians).
+const PATROLS = [
+    { cx: 0, cz: -150, rx: 560, rz: 440, height: 150, points: 12, size: 4, scale: 1, start: Math.PI },
+    { cx: 0, cz: -90, rx: 420, rz: 300, height: 84, points: 12, size: 3, scale: 1, start: 0.9 },
+    { cx: 0, cz: -300, rx: 980, rz: 640, height: 235, points: 16, size: 7, scale: 2 , start: 3.9 }
+];
 
 const FLYING = 0;
 const FALLING = 1;
@@ -60,9 +67,12 @@ export function createAircraft(scene, fx, fleet, sound) {
     const flights = [];
     const planes = [];
 
-    function addFlight(size, patrol) {
+    /** @param route one of PATROLS, or null for a strike flight */
+    function addFlight(size, route) {
         const flight = {
-            patrol,
+            patrol: route !== null,
+            route,
+            scale: route ? route.scale : 1,
             active: false,
             wait: 0,                 // seconds until the next sortie
             x: 0, y: 0, z: 0, heading: 0, pitch: 0, roll: 0,
@@ -89,14 +99,19 @@ export function createAircraft(scene, fx, fleet, sound) {
     }
 
     for (let i = 0; i < STRIKE_FLIGHTS; i++) {
-        addFlight(FLIGHT_SIZE, false).wait = 1 + i * 13;
+        addFlight(FLIGHT_SIZE, null).wait = 1 + i * 9;
     }
-    const patrol = addFlight(PATROL_SIZE, true);
-    patrol.active = true;
-    patrol.x = PATROL.cx - PATROL.rx;
-    patrol.y = PATROL.height;
-    patrol.z = PATROL.cz;
-    patrol.heading = Math.PI / 2;   // towards the north
+    for (const route of PATROLS) {
+        // A patrol starts on its oval, already flying along it.
+        const patrol = addFlight(route.size, route);
+        patrol.active = true;
+        patrol.x = route.cx + route.rx * Math.cos(route.start);
+        patrol.y = route.height;
+        patrol.z = route.cz + route.rz * Math.sin(route.start);
+        patrol.heading = -route.start - Math.PI / 2;
+        patrol.stage = Math.round((route.start - Math.PI) / (Math.PI * 2) * route.points + route.points) % route.points + 1;
+        patrolGoal(patrol);
+    }
 
     // ---- The two instanced meshes ------------------------------------------------
     const model = planeModel();
@@ -190,12 +205,12 @@ export function createAircraft(scene, fx, fleet, sound) {
     }
 
     function patrolGoal(flight) {
-        const angle = Math.PI + (flight.stage / PATROL.points) * Math.PI * 2;
-        flight.goalX = PATROL.cx + PATROL.rx * Math.cos(angle);
-        flight.goalZ = PATROL.cz + PATROL.rz * Math.sin(angle);
-        flight.goalY = PATROL.height;
+        const route = flight.route;
+        const angle = Math.PI + (flight.stage / route.points) * Math.PI * 2;
+        flight.goalX = route.cx + route.rx * Math.cos(angle);
+        flight.goalZ = route.cz + route.rz * Math.sin(angle);
+        flight.goalY = route.height;
     }
-    patrolGoal(patrol);
 
     /** Chooses where a strike flight goes next. */
     function steerStrike(flight, toGoal) {
@@ -232,7 +247,7 @@ export function createAircraft(scene, fx, fleet, sound) {
 
     function steerPatrol(flight, toGoal) {
         if (toGoal < 90) {
-            flight.stage = (flight.stage + 1) % PATROL.points;
+            flight.stage = (flight.stage + 1) % flight.route.points;
             patrolGoal(flight);
         }
     }
@@ -353,16 +368,16 @@ export function createAircraft(scene, fx, fleet, sound) {
                 } else {
                     // In formation: behind and beside the leader, bobbing a little.
                     const [back, right, above] = plane.slot;
-                    plane.x = flight.x - cos * back + sin * right;
-                    plane.z = flight.z + sin * back + cos * right;
-                    plane.y = flight.y + above + Math.sin(time * 1.3 + plane.index * 1.9) * 0.7;
+                    plane.x = flight.x + (-cos * back + sin * right) * flight.scale;
+                    plane.z = flight.z + (sin * back + cos * right) * flight.scale;
+                    plane.y = flight.y + above * flight.scale + Math.sin(time * 1.3 + plane.index * 1.9) * 0.7;
                     plane.heading = flight.heading;
                     plane.pitch = flight.pitch;
                     plane.roll = flight.roll + Math.sin(time * 0.9 + plane.index) * 0.04;
                 }
                 position.set(plane.x, plane.y, plane.z);
                 quaternion.setFromEuler(euler.set(plane.roll, plane.heading, plane.pitch));
-                bodies.setMatrixAt(plane.index, matrix.compose(position, quaternion, scale));
+                bodies.setMatrixAt(plane.index, matrix.compose(position, quaternion, scale.setScalar(flight.scale)));
 
                 const vx = Math.cos(plane.heading) * SPEED;
                 const vz = -Math.sin(plane.heading) * SPEED;
