@@ -1,5 +1,5 @@
 [Unit]
-Description=Battleship game server
+Description=Better Battleship (3D) game server
 After=network-online.target
 Wants=network-online.target
 

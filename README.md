@@ -2,6 +2,8 @@
 
 A real-time multiplayer Battleship game played in the browser, rebuilt in **3D with Three.js** and fought at night in a **thunderstorm**, in the middle of a huge naval battle. Create a room, share the 6-letter code with a friend, place your fleet from the air, then command the fight in first person from your captain's bridge.
 
+**▶ Play it: http://3.134.46.239** (open it in two windows to play against yourself)
+
 ![The battlefield at night: burning harbour, lighthouse, convoys and the fog bank over the enemy waters](docs/storm-battlefield.jpg)
 
 This is the 3D version of my original [Battleship](https://github.com/AdamB-Git7/Battleship). The Java server, the rules, the network protocol and the 118 automated tests are the same; the browser side was rebuilt from scratch.
@@ -231,7 +233,16 @@ deploy/                     systemd service and deploy scripts (from the origina
 
 ## Deployment
 
-Not deployed yet. The `deploy/` folder holds the systemd service and scripts from the original project (AWS EC2); they need their own server address before they can be used for this version.
+The game runs on its own **AWS EC2** t3.micro (Amazon Linux 2023, Amazon Corretto 21) at a permanent Elastic IP, separate from the server of the original 2D version.
+
+- The jar runs as a **systemd** service ([`deploy/battleship.service`](deploy/battleship.service)): it restarts automatically after a crash and starts at boot.
+- It runs as a dedicated **unprivileged, no-login user**, with only the capability needed to listen on port 80, rather than as root.
+- The firewall allows **HTTP (80)** from anywhere and **SSH (22)** from a single IP only, with key-based login.
+- Updates go out with one script, [`deploy/deploy.ps1`](deploy/deploy.ps1): build and test (it stops if any test fails), copy the jar, restart the service. `-FirstInstall` also installs Java and the service on a fresh server ([`deploy/setup-server.sh`](deploy/setup-server.sh)). The script refuses to run against the original game's server.
+
+```powershell
+.\deploy\deploy.ps1 -Server 3.134.46.239
+```
 
 ---
 
