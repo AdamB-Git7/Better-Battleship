@@ -19,8 +19,8 @@ This is the 3D version of my original [Battleship](https://github.com/AdamB-Git7
 1. **Create or join a room.** One player creates a room and shares the code; the other joins with it.
 2. **Place your fleet from the air.** A 3D preview of each ship follows the mouse (green if it fits, red if not). `R` or right click rotates it. The server checks edges and overlaps again.
 3. **Take command on the bridge.** When both fleets are ready, the camera flies into the bridge of your flagship. A holographic miniature of the battlefield floats in front of you: the enemy zone is big on your turn, your own zone on theirs.
-4. **Fire.** Click a cell of the holographic board. One of your ships sends a shell into the fog; enemy shells come out of the fog at your fleet. Hits explode and burn, misses throw up a column of water.
-5. **Sink them all.** A ship whose last cell is hit goes down in a sinking sequence. The first to sink the whole enemy fleet wins, then both players can agree to a rematch.
+4. **Fire.** Click a cell of the holographic board. One of your ships launches a guided missile into the fog; enemy missiles rise out of the fog at your fleet. Hits explode and burn, misses throw up a column of water.
+5. **Sink them all.** A ship whose last cell is hit goes down in a sinking sequence. The first to sink the whole enemy fleet wins, then both players can agree to a rematch. Lose, and you watch the last enemy missile come straight at your bridge.
 
 `V` switches between the bridge and the aerial view at any time (in the aerial view you fire by clicking the sea).
 
@@ -49,8 +49,12 @@ This is the 3D version of my original [Battleship](https://github.com/AdamB-Git7
 
 ### Ships, fire and sinking
 - **Warships generated in code**: shaped hulls with red anti-fouling paint, turrets, radar masts, funnels, lifeboats, railings and hull numbers; a carrier with an angled flight deck and parked aircraft; a submarine with its sail and dive planes
-- Shells fly in arcs; fires light the ships and the water around them; smoke blows downwind
+- **Guided missiles** built in code (body, ogive nose, fins, painted bands: light grey and blue for yours, gunmetal and red for the enemy's). Each one leaves its ship in a burst of flame and white smoke, climbs straight up, levels off, cruises with a slight correcting wobble and dives onto its target, with a bright exhaust flame and a long smoke trail that drifts with the wind for a few seconds. A shot takes 1.6 to 2.3 seconds. Enemy missiles rise out of the fog bank from a random point, never from a real enemy ship
+- Fires light the ships and the water around them; smoke blows downwind
 - **Ships that really sink** (10 to 14 seconds, never twice the same): a magazine explosion with debris, the ship listing and settling by the bow or stern while it burns, then the plunge. The big ships stand on end and sometimes break in two, small ones may capsize, and the submarine dives. Fires hiss out as the water reaches them. Foam, bubbles, burning oil and floating wreckage are left behind, fading to an oil stain that marks the spot. The game never waits for it: the next turn starts at once
+
+### The defeat
+When the enemy sinks your last ship, the game does not just show a banner. The camera goes to the bridge (quickly, if you were in the aerial view) and looks out of the window; an enemy missile rises out of the fog and comes straight at you, growing, screaming, its smoke trail behind it. The bridge shakes, the window lights up, a huge blast fills the view, and the screen cuts to black: **DEFEAT**, *your fleet has been destroyed*. The sound drops to a faint ringing in the ears, then the storm slowly comes back. The status panel stays on top of the black screen, so **Rematch** and **Leave** work as usual and bring everything back. The flash happens once, never strobes, and with *reduced motion* there is no shake and no flash, just a fade to black.
 
 ### A whole battle around you
 Pure decoration, kept out of the play area, and it knows nothing about the game, so it cannot give anything away:
@@ -60,7 +64,7 @@ Pure decoration, kept out of the play area, and it knows nothing about the game,
 
 ### Sound
 - **Real recorded rain and thunder** (CC0): the rain is muffled on the bridge (with rain drumming on the roof) and open in the aerial view. Close strikes give a crack and a roll, distant ones only a low roll that arrives after the flash
-- Synthesised guns, explosions, splashes, the sinking (blasts, steel groans, steam, a bubbling rumble) and the distant battle (gunfire, flak, plane engines), all kept under the storm
+- Synthesised missiles (the roar of the launch, a hiss that fades as yours flies away, a rising whistle for incoming ones), explosions, splashes, the sinking (blasts, steel groans, steam, a bubbling rumble) and the distant battle (gunfire, flak, plane engines), all kept under the storm
 - Starts quietly and fades in; `SOUND ON/OFF` mutes everything
 
 ---
@@ -139,7 +143,7 @@ Each player is handled on their own thread, so two moves can arrive at the same 
 - Tests start 100 threads joining one room (and 50 shots fired at once) and check that exactly one succeeds. With `synchronized` removed, those tests fail on most runs.
 
 **Full snapshots after every move.**
-Each player receives their whole view, not just what changed. The browser stays simple and self-correcting. To animate a shot, it compares the previous view with the new one to find the cell that was just fired at (`game/viewDiff.js`), plays the shell, and only then shows the result.
+Each player receives their whole view, not just what changed. The browser stays simple and self-correcting. To animate a shot, it compares the previous view with the new one to find the cell that was just fired at (`game/viewDiff.js`), plays the missile, and only then shows the result.
 
 **In-memory state, no database.**
 Games are short-lived, so they live in memory. The trade-off: restarting the server ends games in progress.
@@ -199,7 +203,8 @@ src/main/resources/static/
 │   ├── config.js           Grid size, ship lengths, (row, col) <-> world coordinates
 │   ├── net/                network.js: STOMP WebSocket client
 │   ├── game/               viewDiff.js (finds the new shot), guide.js (the pirate's lines)
-│   ├── ui/                 hud.js, input.js (mouse), pirate.js (portrait and speech bubble)
+│   ├── ui/                 hud.js, input.js (mouse), pirate.js (portrait and speech bubble),
+│   │                       defeat.js (the black DEFEAT screen after the defeat cinematic)
 │   ├── audio/              sound.js: recorded storm, synthesised effects, mixing
 │   └── scene/
 │       ├── world.js        Builds everything and runs the render loop
@@ -212,7 +217,8 @@ src/main/resources/static/
 │       ├── shipModels.js   Warships generated in code
 │       ├── fleet.js        The player's and revealed ships: floating, wakes, placement preview
 │       ├── sinking.js      The sinking sequence and the wreck site
-│       ├── effects.js      Shells, explosions, splashes, fires
+│       ├── effects.js      Explosions, splashes, fires; fires the missiles
+│       ├── missiles.js     The guided missiles: model, flight path, exhaust and smoke trail
 │       ├── particles.js    The shared particle pool
 │       ├── bridge.js       The flagship and the bridge interior
 │       ├── holoBoard.js    The holographic tactical board
