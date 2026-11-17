@@ -7,7 +7,7 @@
 //
 // The server is the only source of truth. This file keeps the last view it
 // received, decides what the player is allowed to click, and plays the shot
-// animation before showing each new view.
+// animation (a guided missile) before showing each new view.
 
 import { cellToWorld, inBounds, shipCells, ZONES, ZONE_SPAN } from './config.js';
 import { createNetwork } from './net/network.js';
@@ -29,7 +29,7 @@ let roomCode = null;            // null = in the lobby
 let view = null;                // last view shown on screen
 let orientation = 'HORIZONTAL'; // direction of the ship being placed
 let hover = null;               // cell under the mouse
-let animating = false;          // a shell is in the air
+let animating = false;          // a missile is in the air
 let preferBridge = true;        // battle view: captain's bridge (true) or aerial (false)
 
 const canvas = document.getElementById('scene');
@@ -117,7 +117,7 @@ network.connect();
 
 // ---- Views from the server -----------------------------------------------------
 // Views are handled one at a time, in order. If a view contains a new shot,
-// the shell animation is played first and the result is revealed on impact.
+// the missile animation is played first and the result is revealed on impact.
 const pending = [];
 let processing = false;
 
@@ -139,12 +139,12 @@ async function processViews() {
         if (shot) {
             animating = true;
             refreshHover();
-            hud.showShellInFlight(shot.zone === 'enemy');
-            world.camera.lookAt('window');   // on the bridge: look up and watch the shell
+            hud.showMissileInFlight(shot.zone === 'enemy');
+            world.camera.lookAt('window');   // on the bridge: look up and watch the missile
             await playShot(shot);
             animating = false;
             if (roomCode === null) {
-                break;   // the player left while the shell was flying
+                break;   // the player left while the missile was flying
             }
         }
         showView(next, shot);
@@ -152,7 +152,7 @@ async function processViews() {
     processing = false;
 }
 
-/** Flies a shell to the target cell. Resolves when it lands. */
+/** Flies a missile to the target cell. Resolves when it lands (or is cancelled by leaving). */
 function playShot(shot) {
     return new Promise(resolve => {
         const hit = shot.result !== 'MISS';
@@ -164,22 +164,35 @@ function playShot(shot) {
             to = cellToWorld('enemy', shot.row, shot.col).setY(hit ? 1 : 0);
         } else {
             // Enemy shot: we do not know where their ships are (and must not),
-            // so the shell simply comes out of a random point of the fog.
-            from = ZONES.enemy.center.clone();
-            from.x += (Math.random() - 0.5) * ZONE_SPAN * 0.8;
-            from.z += (Math.random() - 0.5) * ZONE_SPAN * 0.8;
-            from.y = 5;
+            // so the missile simply rises out of a random point of the fog.
+            from = randomFogPoint();
             to = cellToWorld('mine', shot.row, shot.col).setY(hit ? DECK_HEIGHT : 0);
         }
-        world.effects.fireShell(from, to, () => {
+        const onImpact = () => {
             if (hit) {
                 world.effects.explosion(to);
             } else {
                 world.effects.splash(to);
             }
             resolve();
+        };
+        world.effects.fireMissile(from, to, onImpact, {
+            kind: shot.zone === 'enemy' ? 'outgoing' : 'incoming',
+            onCancel: resolve   // the player left: nothing to reveal any more
         });
     });
+}
+
+/**
+ * A random point low in the enemy fog bank. Enemy missiles start there, never
+ * from a real enemy ship (the client does not know where they are, and must not).
+ */
+function randomFogPoint() {
+    const point = ZONES.enemy.center.clone();
+    point.x += (Math.random() - 0.5) * ZONE_SPAN * 0.8;
+    point.z += (Math.random() - 0.5) * ZONE_SPAN * 0.8;
+    point.y = 2;
+    return point;
 }
 
 function showView(newView, shot) {

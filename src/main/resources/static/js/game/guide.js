@@ -27,7 +27,7 @@ const LINES = {
         'The fleet is ready, captain! The enemy is still fumbling with their anchors.'
     ],
     battleFirst: [
-        'Battle stations! You fire first, captain. Pick a square on the holo-board and we\'ll shell that cursed fog.'
+        'Battle stations! You fire first, captain. Pick a square on the holo-board and we\'ll put a missile into that cursed fog.'
     ],
     battleSecond: [
         'Battle stations! They shoot first. Hold fast, captain!'
@@ -54,7 +54,7 @@ const LINES = {
     theirHit: [
         'We\'re hit! The {ship} is on fire!',
         'Blast! They found our {ship}.',
-        'The {ship} took a shell, but she\'s still floating.'
+        'The {ship} took a missile, but she\'s still floating.'
     ],
     theirSunk: [
         'We lost the {ship}! Make them pay for it, captain.',

@@ -6,9 +6,11 @@
 //
 // Signal path:
 //
-//   one-shot effects (cannon, explosion, splash, thunder) --> effects filter --+
-//   storm ambience (recorded rain) -------> ambience filter -----------------+--> master --> limiter --> speakers
-//   bridge-only layers (rain on the roof, hull hum) ---------------------------+
+//   one-shot effects (missiles, explosion, splash, thunder) --> effects filter --+
+//   storm ambience (recorded rain) -------> ambience filter ---------------------+--> duck --> master --> limiter --> speakers
+//   bridge-only layers (rain on the roof, hull hum) -----------------------------+               ^
+//                                                                                                |
+//   defeat cinematic (scream, the blast, the ringing in the ears) -------------------------------+
 //
 //   background battle (distant guns, flak, plane engines) --> background gain --> effects filter
 //
@@ -17,6 +19,9 @@
 // - The background battle has its own small volume knob in front of the effects
 //   filter, so it always stays behind the player's own guns, the thunder and
 //   the pirate.
+// - "duck" is only used by the defeat cinematic: after the blast it pulls the
+//   whole world down to near silence (the player is stunned), then lets it
+//   come back slowly. The cinematic's own sounds go around it, straight to master.
 // - The two filters change with the place: on the bridge the storm is heard
 //   through steel and glass (muffled), in the aerial view it is open and wide.
 //
@@ -58,6 +63,8 @@ export function createSound() {
     let noiseBuffer = null;
     let master = null;
     let effectsBus = null;
+    let duck = null;            // the "stunned" volume knob of the defeat cinematic
+    let ringing = null;         // the ringing in the ears after the defeat blast, while it plays
     let backgroundBus = null;   // everything that belongs to the battle in the background
     let engine = null;          // the drone of the planes, once started
     let lastDistant = 0;        // when the last distant boom / flak pop was started
@@ -99,10 +106,12 @@ export function createSound() {
                 master.gain.setTargetAtTime(MASTER_VOLUME, context.currentTime + 0.1, FADE_IN / 3);
             }
             master.connect(limiter).connect(context.destination);
+            duck = gainNode(1);
+            duck.connect(master);
             effectsBus = context.createBiquadFilter();
             effectsBus.type = 'lowpass';
             effectsBus.frequency.value = PLACES[place].effectsTone;
-            effectsBus.connect(master);
+            effectsBus.connect(duck);
             backgroundBus = gainNode(PLACES[place].background);
             backgroundBus.connect(effectsBus);
             startAmbience();
@@ -231,7 +240,7 @@ export function createSound() {
         const settings = PLACES[place];
         const bus = gainNode(settings.ambience);
         const tone = filterNode('lowpass', settings.ambienceTone);
-        bus.connect(tone).connect(master);
+        bus.connect(tone).connect(duck);
 
         // Rain: the recording, twice at once from different points, the second
         // one slightly slower and darker. Together they sound like a heavier,
@@ -243,7 +252,7 @@ export function createSound() {
         // (the recording through a band of metal resonance), and the low hum
         // of the ship. They skip the muffling filter.
         const roof = gainNode(settings.roof);
-        roof.connect(master);
+        roof.connect(duck);
 
         rainBytes
             .then(bytes => context.decodeAudioData(bytes))
@@ -265,9 +274,48 @@ export function createSound() {
             osc.connect(hum);
             osc.start();
         }
-        hum.connect(master);
+        hum.connect(duck);
 
         ambience = { bus, tone, rain, roof, hum };
+    }
+
+    /**
+     * A band of noise whose pitch and volume slide over `seconds`: the hiss
+     * of a rocket motor. Rising = coming closer, falling = going away.
+     * Exponential ramps cannot reach 0, hence the 0.0001 instead of silence.
+     */
+    function hiss({ seconds, from, to, q, startVolume, endVolume, attack = 0.05, out = effectsBus }) {
+        const start = context.currentTime;
+        const source = context.createBufferSource();
+        source.buffer = noiseBuffer;
+        source.loop = true;
+        const band = filterNode('bandpass', from, q);
+        band.frequency.setValueAtTime(from, start);
+        band.frequency.exponentialRampToValueAtTime(to, start + seconds);
+        const gain = gainNode(0);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(startVolume, start + attack);
+        gain.gain.exponentialRampToValueAtTime(endVolume, start + seconds);
+        gain.gain.linearRampToValueAtTime(0, start + seconds + 0.03);   // cut at the impact
+        source.connect(band).connect(gain).connect(out);
+        source.start(start, Math.random() * 2);
+        source.stop(start + seconds + 0.05);
+    }
+
+    /** A thin tone that slides in pitch and swells: the whistle of air over the fins. */
+    function whistle({ seconds, from, to, volume, out = effectsBus }) {
+        const start = context.currentTime;
+        const osc = context.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(from, start);
+        osc.frequency.exponentialRampToValueAtTime(to, start + seconds);
+        const gain = gainNode(0);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(volume, start + seconds);
+        gain.gain.linearRampToValueAtTime(0, start + seconds + 0.03);
+        osc.connect(gain).connect(out);
+        osc.start(start);
+        osc.stop(start + seconds + 0.05);
     }
 
     /** Moves an audio parameter smoothly to a new value (a crossfade). */
@@ -342,6 +390,97 @@ export function createSound() {
             noise({ duration: 0.12, volume: 0.5 * near, type: 'highpass', from: 1800, to: 900 });   // the crack
             noise({ duration: 0.7, volume: 0.6 * near, type: 'lowpass', from: 2200 * near + 300, to: 90 });
             thump({ duration: 0.55, volume: 0.8 * near, from: 130, to: 32 });
+        },
+
+        // ---- Missiles (see scene/missiles.js) --------------------------------------
+
+        /**
+         * A missile leaving its tube: a dull thump, the roar of the booster that
+         * dies away, and a rising whoosh as it picks up speed.
+         */
+        missileLaunch(distance = 0) {
+            if (!ready()) return;
+            const near = nearness(distance);
+            thump({ duration: 0.45, volume: 0.45 * near, from: 120, to: 40 });
+            noise({ duration: 1.8, volume: 0.42 * near, type: 'lowpass', from: 700 * near + 300, to: 120 });
+            noise({ at: 0.08, duration: 0.9, volume: 0.12 * near, type: 'bandpass', from: 500, to: 1700, q: 1.2 });
+        },
+
+        /** My missile flying away: the rocket hiss, lower and quieter as it goes. */
+        missileHiss(seconds, distance = 0) {
+            if (!ready()) return;
+            const near = nearness(distance);
+            hiss({ seconds, from: 2600, to: 1100, q: 0.9, startVolume: 0.1 * near, endVolume: 0.012, attack: 0.25 });
+        },
+
+        /**
+         * The enemy's missile coming at my fleet: a hiss that rises in pitch
+         * and grows louder, with a faint whistle on top, until the impact.
+         */
+        missileIncoming(seconds) {
+            if (!ready()) return;
+            hiss({ seconds, from: 700, to: 2300, q: 3, startVolume: 0.01, endVolume: 0.14, attack: 0.3 });
+            whistle({ seconds, from: 900, to: 1500, volume: 0.018 });
+        },
+
+        /** The defeat: the missile coming straight at the bridge. Louder, and not muffled by the glass. */
+        missileScream(seconds) {
+            if (!ready()) return;
+            hiss({ seconds, from: 500, to: 2600, q: 2.5, startVolume: 0.01, endVolume: 0.32, attack: 0.4, out: master });
+            whistle({ seconds, from: 700, to: 1900, volume: 0.05, out: master });
+            // The motor's roar, growing under the scream.
+            hiss({ seconds, from: 160, to: 420, q: 0.8, startVolume: 0.02, endVolume: 0.35, attack: 0.4, out: master });
+        },
+
+        /**
+         * The defeat blast: the loudest sound of the game, then the player is
+         * stunned. The storm drops to near silence with a faint ringing in the
+         * ears for a few seconds, then slowly comes back.
+         */
+        defeatBlast() {
+            if (!ready()) return;
+            const now = context.currentTime;
+            noise({ duration: 0.18, volume: 0.7, type: 'highpass', from: 2400, to: 900, out: master });   // the crack
+            noise({ duration: 3.2, volume: 1, type: 'lowpass', from: 3800, to: 40, out: master });
+            thump({ duration: 2.8, volume: 1, from: 75, to: 18, out: master });
+            // Stunned: everything else falls away just after the blast...
+            duck.gain.cancelScheduledValues(now);
+            duck.gain.setValueAtTime(duck.gain.value, now);
+            duck.gain.setTargetAtTime(0.03, now + 0.25, 0.15);
+            // ...and comes back slowly after about five seconds.
+            duck.gain.setTargetAtTime(1, now + 5, 2.5);
+            // The ringing: two close high tones (they beat slowly), very quiet.
+            ringing?.stop();
+            const ring = gainNode(0);
+            ring.gain.setValueAtTime(0, now + 0.3);
+            ring.gain.linearRampToValueAtTime(0.03, now + 0.9);
+            ring.gain.linearRampToValueAtTime(0.012, now + 4.5);
+            ring.gain.linearRampToValueAtTime(0, now + 7.5);
+            ring.connect(master);
+            for (const frequency of [3520, 3527]) {
+                const osc = context.createOscillator();
+                osc.frequency.value = frequency;
+                osc.connect(ring);
+                osc.start(now + 0.3);
+                osc.stop(now + 7.6);
+            }
+            ringing = {
+                stop() {
+                    ring.gain.cancelScheduledValues(context.currentTime);
+                    ring.gain.setTargetAtTime(0, context.currentTime, 0.1);
+                }
+            };
+        },
+
+        /** After a defeat (rematch or leave): the world's sound comes back at once, the ringing stops. */
+        recover() {
+            if (!duck) return;
+            const now = context.currentTime;
+            duck.gain.cancelScheduledValues(now);
+            duck.gain.setValueAtTime(duck.gain.value, now);
+            duck.gain.setTargetAtTime(1, now, 0.3);
+            ringing?.stop();
+            ringing = null;
         },
 
         explosion(distance = 0) {

@@ -1,4 +1,4 @@
-// Visual effects for shots: the shell and its arc, explosions, fire and smoke
+// Visual effects for shots: the missiles (see missiles.js), explosions, fire and smoke
 // on damaged ships, water splashes and the foam rings spreading on the sea.
 //
 // The particles themselves live in a pool that is drawn in one draw call
@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { createParticles } from './particles.js';
 import { weather, WIND } from './weather.js';
 import { waveHeight } from './sea.js';
+import { createMissiles } from './missiles.js';
 
 const POOL_SIZE = 3600;      // room for a sinking ship on top of the usual fires
 const FIRE_LIGHTS = 2;      // real lights, on the fires closest to the camera
@@ -47,67 +48,37 @@ export function createEffects(scene, sound, sea) {
     let listener = null;   // the camera: sounds are quieter far away
     const distanceTo = position => (listener ? listener.position.distanceTo(position) : 0);
 
-    // ---- Shells -----------------------------------------------------------
-    const shellGeometry = new THREE.SphereGeometry(0.5, 8, 6);
-    // A glowing tracer round: a dark shell would be invisible in the storm.
-    const shellMaterial = new THREE.MeshBasicMaterial({ color: 0xffb46a, fog: false });
-    const shells = [];
-
-    // One light for the brightest thing happening: a muzzle flash or an explosion.
+    // One light for the brightest thing happening: a launch, a missile's motor or an explosion.
     const flash = new THREE.PointLight(0xffa64d, 0, 160, 1.5);
     root.add(flash);
     let seaFlash = 0;   // the same flash, reflected in the water
 
-    /**
-     * Fires a shell along an arc. onImpact is called when it lands.
-     * The game result is only shown at that moment (see main.js).
-     */
-    function fireShell(from, to, onImpact) {
-        const mesh = new THREE.Mesh(shellGeometry, shellMaterial);
-        mesh.position.copy(from);
-        root.add(mesh);
-        const distance = from.distanceTo(to);
-        shells.push({
-            mesh,
-            from: from.clone(),
-            to: to.clone(),
-            height: distance * 0.3,
-            duration: THREE.MathUtils.clamp(distance / 130, 0.9, 1.7),
-            time: 0,
-            onImpact
-        });
-        // Muzzle flash and smoke at the gun.
-        for (let i = 0; i < 9; i++) {
-            spawn({ position: from, velocity: burst(10, 3 + Math.random() * 5), life: 0.22,
-                size: [3, 9], color: 0xffd08a, additive: true });
-            spawn({ position: from, velocity: burst(6, 2 + Math.random() * 3), life: 2.2,
-                size: [2.5, 11], color: 0x8d8a86, colorEnd: 0x3d4043, opacity: 0.5, smoke: true, drag: 1, wind: 0.5 });
+    /** Lights the flash at a position, unless something brighter already holds it. */
+    function glow(position, intensity) {
+        const level = intensity * FLASH_SCALE;
+        if (level >= flash.intensity) {
+            flash.position.copy(position).y += 2;
+            flash.intensity = level;
         }
-        flash.position.copy(from).y += 3;
-        flash.intensity = Math.max(flash.intensity, 500 * FLASH_SCALE);
-        sea.setGlow(0, from, 1.2 * FLASH_SCALE);
-        seaFlash = Math.max(seaFlash, 1.2 * FLASH_SCALE);
-        sound.cannon(distanceTo(from));
     }
 
-    function updateShells(dt) {
-        for (let i = shells.length - 1; i >= 0; i--) {
-            const shell = shells[i];
-            shell.time += dt;
-            const p = Math.min(shell.time / shell.duration, 1);
-            shell.mesh.position.lerpVectors(shell.from, shell.to, p);
-            shell.mesh.position.y += 4 * shell.height * p * (1 - p);   // parabola
-            // A hot glow around the shell and a thin trail behind it.
-            spawn({ position: shell.mesh.position, velocity: scratch.set(0, 0, 0), life: 0.22,
-                size: [3.4, 0.6], color: 0xff9a45, opacity: 0.8, additive: true });
-            spawn({ position: shell.mesh.position, velocity: scratch.set(0, 0.5, 0), life: 0.9,
-                size: [1.2, 3.4], color: 0x9c9c9c, opacity: 0.28, smoke: true, wind: 0.4 });
-            if (p >= 1) {
-                root.remove(shell.mesh);
-                shells.splice(i, 1);
-                shell.onImpact();
-            }
-        }
+    // ---- Missiles -------------------------------------------------------------
+    // The shots of the game are guided missiles (missiles.js). They use this
+    // module's particle pool and flash light, so they add no draw call for
+    // their flames and smoke, and no light.
+    const missiles = createMissiles(root, { spawn, glow, sound, distanceTo });
+
+    /**
+     * Fires a missile at a target. onImpact is called when it lands: the game
+     * result is only shown at that moment (see main.js).
+     * @param options see missiles.launch (style, kind, duration, onCancel)
+     * @returns the flight time in seconds
+     */
+    function fireMissile(from, to, onImpact, options) {
+        const seconds = missiles.launch(from, to, onImpact, options);
+        sea.setGlow(0, from, 1.2 * FLASH_SCALE);   // the launch lights the water around the ship
+        seaFlash = Math.max(seaFlash, 1.2 * FLASH_SCALE);
+        return seconds;
     }
 
     // ---- Impacts ------------------------------------------------------------
@@ -313,10 +284,7 @@ export function createEffects(scene, sound, sea) {
         nearest = [];
         nearestTimer = 0;
         particles.clear();
-        for (const shell of shells) {
-            root.remove(shell.mesh);
-        }
-        shells.length = 0;
+        missiles.clear();
         for (const ring of rings) {
             root.remove(ring.mesh);
             ring.mesh.material.dispose();
@@ -329,7 +297,7 @@ export function createEffects(scene, sound, sea) {
     /** @param camera where the player is: for sound distance and to choose the lit fires */
     function update(dt, time, camera) {
         listener = camera;
-        updateShells(dt);
+        missiles.update(dt, time);
         updateFires(dt, time);
         updateRings(dt, time);
         particles.update(dt);
@@ -345,7 +313,7 @@ export function createEffects(scene, sound, sea) {
     }
 
     return {
-        fireShell, explosion, splash, syncFires, clear, update, resize,
+        fireMissile, explosion, splash, syncFires, clear, update, resize,
         // Used by the sinking (sinking.js):
         spawn, addFire, removeFire, distanceTo
     };

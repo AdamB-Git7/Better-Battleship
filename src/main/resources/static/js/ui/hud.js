@@ -194,10 +194,10 @@ export function createHud(actions) {
             }
         },
 
-        /** Shown while a shell is in the air, before the result is known. */
-        showShellInFlight(mine) {
-            setTurn(mine ? 'Shell away…' : 'Incoming!', mine ? 'mine' : 'theirs');
-            el.status.textContent = mine ? 'Shell in the air…' : 'Incoming shell, brace!';
+        /** Shown while a missile is in the air, before the result is known. */
+        showMissileInFlight(mine) {
+            setTurn(mine ? 'Missile away…' : 'Incoming!', mine ? 'mine' : 'theirs');
+            el.status.textContent = mine ? 'Missile in the air…' : 'Incoming missile, brace!';
         },
 
         showError(message) {
