@@ -21,6 +21,16 @@
 <!-- The 3D scene fills the page; the interface below floats on top of it. -->
 <canvas id="scene"></canvas>
 
+<!-- The end of a lost game (js/ui/defeat.js): under the HUD, so its panel and buttons stay usable. -->
+<div id="defeat" class="defeat" hidden>
+    <div id="defeat-flash" class="defeat-flash"></div>
+    <div class="defeat-curtain"></div>
+    <div id="defeat-title" class="defeat-title" role="alert">
+        <h2>Defeat</h2>
+        <p>Your fleet has been destroyed</p>
+    </div>
+</div>
+
 <div id="hud">
     <header class="topbar">
         <div class="brand">BATTLESHIP <span>3D</span></div>

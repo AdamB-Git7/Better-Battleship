@@ -32,7 +32,8 @@ const VIEWS = {
 // Preset looks on the bridge (pitch in radians, negative = looking down).
 const LOOKS = {
     board: THREE.MathUtils.degToRad(-30),    // at the holographic board, to aim
-    window: THREE.MathUtils.degToRad(-9)     // out of the window, to watch the shells
+    window: THREE.MathUtils.degToRad(-9),    // out of the window, to watch the missiles
+    ahead: THREE.MathUtils.degToRad(1)       // straight at the horizon (the defeat cinematic)
 };
 
 // Looking around on the bridge with the mouse. The middle of the screen, where
@@ -83,6 +84,8 @@ export function createCameraRig(domElement) {
     const edgeLook = { yaw: 0, pitch: 0 };           // the mouse part, animated
     const edgeGoal = { yaw: 0, pitch: 0 };           // where the mouse part is heading
     let lookGoal = null;         // { pitch, delay } while the preset look changes
+    let locked = false;          // during the defeat cinematic the mouse does not turn the head
+    const shaking = { strength: 0, left: 0, seconds: 1 };   // see shake()
     const euler = new THREE.Euler(0, 0, 0, 'YXZ');
     const helper = new THREE.Object3D();
 
@@ -90,7 +93,14 @@ export function createCameraRig(domElement) {
         // A tiny sway, as if the ship was rolling under the captain's feet. It is
         // kept very small so the cells of the holographic board stay easy to click.
         const pitch = THREE.MathUtils.clamp(look.pitch + edgeLook.pitch, MIN_PITCH, MAX_PITCH);
-        euler.set(pitch + Math.sin(time * 0.55) * 0.0015, edgeLook.yaw, Math.sin(time * 0.7) * 0.003);
+        // A shake (see shake()): a few fast sines of unrelated speeds look like
+        // random jolts, but move smoothly and allocate nothing.
+        const jolt = shaking.left > 0 ? shaking.strength * (shaking.left / shaking.seconds) : 0;
+        euler.set(
+            pitch + Math.sin(time * 0.55) * 0.0015 + jolt * (Math.sin(time * 61) + Math.sin(time * 37.3)) * 0.012,
+            edgeLook.yaw + jolt * (Math.sin(time * 47.7) + Math.sin(time * 29.1)) * 0.012,
+            Math.sin(time * 0.7) * 0.003 + jolt * Math.sin(time * 43.9) * 0.015
+        );
         return target.setFromEuler(euler);
     }
 
@@ -159,6 +169,7 @@ export function createCameraRig(domElement) {
             }
             return;
         }
+        shaking.left = Math.max(0, shaking.left - dt);
         if (currentView === 'bridge') {
             // Turn by itself towards the board or the window, when asked to.
             if (lookGoal) {
@@ -207,7 +218,7 @@ export function createCameraRig(domElement) {
      * Call with null when the mouse leaves the window: the view comes back.
      */
     function pointAt(x, y) {
-        if (x === null) {
+        if (x === null || locked) {
             edgeGoal.yaw = edgeGoal.pitch = 0;
             return;
         }
@@ -219,10 +230,31 @@ export function createCameraRig(domElement) {
             : -edgeAmount(ny, EDGE.down.start) * EDGE.down.angle;
     }
 
+    /**
+     * Cinematic mode (the defeat): the head stops following the mouse and
+     * looks straight ahead, out of the window.
+     */
+    function setLocked(value) {
+        locked = value;
+        if (locked) {
+            edgeGoal.yaw = edgeGoal.pitch = 0;
+        }
+    }
+
+    /**
+     * Shakes the first-person view: a jolt that dies out over `seconds`.
+     * strength 1 = a heavy blast nearby; 0 stops a shake at once.
+     */
+    function shake(strength, seconds = 0.6) {
+        shaking.strength = strength;
+        shaking.seconds = Math.max(seconds, 0.01);
+        shaking.left = strength > 0 ? seconds : 0;
+    }
+
     function resize(width, height) {
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
     }
 
-    return { camera, flyTo, lookAt, pointAt, update, resize, isOnBridge: () => currentView === 'bridge' };
+    return { camera, flyTo, lookAt, pointAt, setLocked, shake, update, resize, isOnBridge: () => currentView === 'bridge' };
 }

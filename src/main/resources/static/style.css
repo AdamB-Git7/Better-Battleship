@@ -226,6 +226,104 @@ input::placeholder { color: var(--muted); letter-spacing: 0.12em; }
     to { opacity: 1; letter-spacing: 0.3em; }
 }
 
+/* ---- The defeat screen (js/ui/defeat.js) ---- */
+/* It sits between the 3D scene and the HUD: black over the scene, but the
+   status panel (Rematch, Leave) and the pirate stay on top of it. */
+.defeat {
+    --fade: 0.6s;
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+}
+
+/* The blast seen through the window: one flash, hot white turning orange. */
+.defeat-flash {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    background: radial-gradient(ellipse at 50% 42%, #fff6e2 0%, #ffb35c 45%, #8a2b0a 100%);
+}
+
+.defeat-flash.on { animation: defeat-flash 0.45s ease-out forwards; }
+
+@keyframes defeat-flash {
+    0% { opacity: 0; }
+    18% { opacity: 0.9; }
+    100% { opacity: 0; }
+}
+
+.defeat-curtain {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    opacity: 0;
+    transition: opacity var(--fade) ease-in;
+}
+
+.defeat.black { pointer-events: auto; }   /* the scene below cannot be clicked any more */
+.defeat.black .defeat-curtain { opacity: 1; }
+
+.defeat-title {
+    position: absolute;
+    top: 34%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: var(--bad);
+    opacity: 0;
+    white-space: nowrap;
+}
+
+/* The title waits for the black, then fades in slowly while its letters close up. */
+.defeat.black .defeat-title {
+    opacity: 1;
+    transition: opacity 1.6s ease-out calc(var(--fade) + 0.3s);
+}
+
+.defeat.black .defeat-title h2 { animation: defeat-letters 2.6s ease-out calc(var(--fade) + 0.3s) both; }
+
+.defeat-title h2 {
+    margin: 0;
+    padding: 10px 0 12px 0.45em;   /* the left padding balances the spacing after the last letter */
+    font-size: clamp(44px, 11vw, 132px);
+    font-weight: 700;
+    letter-spacing: 0.45em;
+    text-transform: uppercase;
+    text-shadow: 0 0 28px rgba(255, 70, 50, 0.45);
+    border-top: 1px solid rgba(255, 90, 71, 0.55);
+    border-bottom: 1px solid rgba(255, 90, 71, 0.55);
+}
+
+.defeat-title p {
+    margin: 18px 0 0;
+    font-size: clamp(12px, 1.6vw, 16px);
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+@keyframes defeat-letters {
+    from { letter-spacing: 0.75em; padding-left: 0.75em; }
+    to { letter-spacing: 0.45em; padding-left: 0.45em; }
+}
+
+/* On the black screen only the end-of-game panel, the top bar and the pirate remain. */
+body.defeated #fleets,
+body.defeated #turn,
+body.defeated #banner,
+body.defeated #view { display: none !important; }
+body.defeated #hud::before { display: none; }
+
+body.defeated #hud .room {
+    left: 50%;
+    right: auto;
+    bottom: 16%;
+    transform: translateX(-50%);
+    width: min(460px, calc(100vw - 32px));
+    background: rgba(10, 14, 18, 0.9);
+    border-color: rgba(255, 90, 71, 0.35);
+}
+
 /* On the bridge the holographic board is at the bottom centre of the screen,
    so the status panel moves to the bottom right corner. */
 @media (min-width: 900px) {
@@ -379,6 +477,7 @@ input::placeholder { color: var(--muted); letter-spacing: 0.12em; }
 
 @media (prefers-reduced-motion: reduce) {
     .banner { animation: none; }
+    .defeat.black .defeat-title h2 { animation: none; }
     .pirate-portrait svg, .pirate-eye, .pirate.talking .pirate-mouth { animation: none; }
 }
 

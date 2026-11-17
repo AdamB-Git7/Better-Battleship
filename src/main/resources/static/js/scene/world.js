@@ -63,6 +63,26 @@ export async function createWorld(canvas, sound, onProgress) {
     window.addEventListener('resize', resize);
     resize();
 
+    // ---- Timers in game time -----------------------------------------------------
+    // wait() counts frames, not wall-clock time: a sequence written with it (the
+    // defeat cinematic) stays in step with the missiles and explosions it waits
+    // for, even when the browser slows the page down.
+    const timers = [];
+
+    /** A promise that resolves after `seconds` of animation. */
+    function wait(seconds) {
+        return new Promise(resolve => timers.push({ left: seconds, resolve }));
+    }
+
+    function runTimers(dt) {
+        for (let i = timers.length - 1; i >= 0; i--) {
+            timers[i].left -= dt;
+            if (timers[i].left <= 0) {
+                timers.splice(i, 1)[0].resolve();
+            }
+        }
+    }
+
     // ---- Render loop ------------------------------------------------------------
     const clock = new THREE.Clock();
     // One frame. The order matters: the storm first (it decides the wind and
@@ -71,6 +91,7 @@ export async function createWorld(canvas, sound, onProgress) {
     function frame(forcedDt) {
         const dt = forcedDt ?? Math.min(clock.getDelta(), 0.1);   // avoid huge jumps after a pause
         time += dt;
+        runTimers(dt);
         storm.update(dt, time, rig.camera);
         sound.setGust(weather.gust);
         sea.update(time);
@@ -91,7 +112,7 @@ export async function createWorld(canvas, sound, onProgress) {
     // the console (used to measure performance and to test a sinking). It shows
     // nothing hidden: the fleet only holds ships the server has revealed.
     if (new URLSearchParams(location.search).has('debug')) {
-        window.__bb = { renderer, scene, rig, frame, weather, storm, battlefield, fleet };
+        window.__bb = { renderer, scene, rig, frame, weather, storm, battlefield, fleet, effects };
     }
 
     // ---- Mouse picking -----------------------------------------------------------
@@ -125,14 +146,17 @@ export async function createWorld(canvas, sound, onProgress) {
         holo.setFocus(zone, delay);
     }
 
-    /** Moves the player into the bridge (first person)... */
-    function enterBridge() {
+    /**
+     * Moves the player into the bridge (first person)...
+     * @param seconds length of the camera flight (default: the usual slow one)
+     */
+    function enterBridge(seconds) {
         bridge.setInside(true);
         grid.setVisible(false);
         fog.setBridgeMode(true);
         storm.setRoom(bridge.roomBox, bridge.roofPlane);   // no rain inside the bridge
         sound.setPlace('bridge');
-        rig.flyTo('bridge');
+        rig.flyTo('bridge', seconds);
     }
 
     /** ...or back to one of the aerial viewpoints ('placement', 'battle', 'lobby'). */
@@ -186,5 +210,5 @@ export async function createWorld(canvas, sound, onProgress) {
         fleet.sync('enemy', view.opponentShips, instant);
     }
 
-    return { showView, pickCell, showHover, hideHover, enterBridge, leaveBridge, setBoardFocus, fleet, effects, camera: rig };
+    return { showView, pickCell, showHover, hideHover, enterBridge, leaveBridge, setBoardFocus, wait, fleet, effects, camera: rig };
 }

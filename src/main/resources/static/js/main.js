@@ -16,13 +16,17 @@ import { createGuide } from './game/guide.js';
 import { createSound } from './audio/sound.js';
 import { createWorld } from './scene/world.js';
 import { DECK_HEIGHT } from './scene/shipModels.js';
+import { BRIDGE_EYE } from './scene/bridge.js';
 import { createHud } from './ui/hud.js';
+import { createDefeatScreen } from './ui/defeat.js';
 import { createInput } from './ui/input.js';
 import { createPirate } from './ui/pirate.js';
 
 const HOVER_VALID = 0x4dff88;
 const HOVER_INVALID = 0xff4a3d;
 const HOVER_TARGET = 0xffc46b;
+// "Reduce motion" in the system settings: the defeat has no shake and no flash.
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---- State ------------------------------------------------------------------
 let roomCode = null;            // null = in the lobby
@@ -31,11 +35,14 @@ let orientation = 'HORIZONTAL'; // direction of the ship being placed
 let hover = null;               // cell under the mouse
 let animating = false;          // a missile is in the air
 let preferBridge = true;        // battle view: captain's bridge (true) or aerial (false)
+let defeated = false;           // the defeat cinematic or the black DEFEAT screen is on
+let defeatRun = 0;              // counts cinematics: a cancelled one sees the number change and stops
 
 const canvas = document.getElementById('scene');
 const sound = createSound();
 const guide = createGuide();          // chooses what the pirate says
 const pirate = createPirate(sound);   // shows it on screen
+const defeatScreen = createDefeatScreen();
 
 const hud = createHud({
     onCreate: () => network.createRoom(),
@@ -136,18 +143,28 @@ async function processViews() {
     while (pending.length > 0 && roomCode !== null) {
         const next = pending.shift();
         const shot = findNewShot(view, next);
+        // The enemy's shot that sinks my last ship gets the defeat cinematic
+        // instead of the usual missile.
+        const finalBlow = shot !== null && shot.zone === 'mine' && next.status === 'FINISHED' && next.youWon === false;
         if (shot) {
             animating = true;
             refreshHover();
             hud.showMissileInFlight(shot.zone === 'enemy');
-            world.camera.lookAt('window');   // on the bridge: look up and watch the missile
-            await playShot(shot);
+            if (finalBlow) {
+                await playDefeat();
+            } else {
+                world.camera.lookAt('window');   // on the bridge: look up and watch the missile
+                await playShot(shot);
+            }
             animating = false;
             if (roomCode === null) {
                 break;   // the player left while the missile was flying
             }
         }
         showView(next, shot);
+        if (finalBlow) {
+            fadeToDefeat();   // not awaited: later views (a rematch request) are shown meanwhile
+        }
     }
     processing = false;
 }
@@ -198,9 +215,13 @@ function randomFogPoint() {
 function showView(newView, shot) {
     const previous = view;
     view = newView;
+    if (defeated && view.status !== 'FINISHED') {
+        endDefeat();   // a rematch started: the black screen goes away
+    }
     // The very first view of a room is drawn without animations.
     world.showView(view, previous === null);
-    if (!previous || previous.status !== view.status) {
+    // During the defeat the camera stays on the bridge, whatever the view preference.
+    if ((!previous || previous.status !== view.status) && !defeated) {
         chooseCamera();
     }
     hud.showGame(view, orientation, onBridge());
@@ -211,6 +232,106 @@ function showView(newView, shot) {
     const sunk = shot && shot.result === 'SUNK';
     aimHead(shot ? 1.2 : 0.4, sunk ? (shot.zone === 'enemy' ? 3.4 : 2.6) : undefined);
     refreshHover();
+}
+
+// ---- The defeat cinematic ------------------------------------------------------------
+// When the enemy sinks my last ship, the last missile is not shown hitting it.
+// Instead: the camera goes to the bridge and looks out of the window, a missile
+// rises out of the fog and flies straight at the bridge, growing, screaming;
+// the view shakes, the window lights up, BOOM, and the screen cuts to black
+// with "DEFEAT" on it. The status panel (Rematch, Leave) stays on top.
+//
+// Every step is timed with world.wait (game time, in step with the missile)
+// and checks defeatRun first: leaving or a rematch bumps it, so a step that
+// comes too late does nothing.
+
+const CINEMATIC_FLIGHT = 2.6;   // seconds from the fog to the window
+
+/** Up to the blast. Resolves at the moment of the explosion (or when cancelled). */
+async function playDefeat() {
+    const run = ++defeatRun;
+    defeated = true;
+    defeatScreen.begin();
+    // Fast to the bridge if needed, eyes straight out of the window.
+    const fromAir = !world.camera.isOnBridge();
+    if (fromAir) {
+        world.enterBridge(0.9);
+    }
+    world.camera.setLocked(true);
+    world.camera.lookAt('ahead');
+    await world.wait(fromAir ? 1.1 : 0.5);
+    if (run !== defeatRun) {
+        return;
+    }
+    // The missile aims at the flagship's bow, right in front of the windows:
+    // close enough to fill the view, far enough for the blast to look like fire
+    // and not like a few giant blobs stuck on the glass.
+    const target = BRIDGE_EYE.clone();
+    target.y -= 0.8;
+    target.z -= 30;
+    // Out of the fog off to one side, so its trail curves in towards us.
+    const from = randomFogPoint();
+    from.x = (Math.random() < 0.5 ? -1 : 1) * (20 + Math.random() * 20);
+    if (REDUCED_MOTION) {
+        // No shake, no flash: just fade to black shortly before it arrives.
+        world.wait(CINEMATIC_FLIGHT - 0.4).then(() => {
+            if (run === defeatRun) {
+                defeatScreen.show(0.4);
+            }
+        });
+    } else {
+        // The bridge shakes in the last moment (the missile's roar, then the blast).
+        world.wait(CINEMATIC_FLIGHT - 0.35).then(() => {
+            if (run === defeatRun) {
+                world.camera.shake(0.6, 1.2);
+            }
+        });
+    }
+    await new Promise(resolve => {
+        world.effects.fireMissile(from, target, () => {
+            if (run === defeatRun) {
+                // A big blast right outside the windows. It lights the bridge
+                // (the single flash light), except with reduced motion.
+                world.effects.closeBlast(target, !REDUCED_MOTION);
+                // A second blast just after, closer: the fire rolls towards the windows.
+                const closer = target.clone();
+                closer.z += 10;
+                world.wait(0.12).then(() => {
+                    if (run === defeatRun) {
+                        world.effects.closeBlast(closer, false);
+                    }
+                });
+                sound.defeatBlast();
+                if (!REDUCED_MOTION) {
+                    defeatScreen.flash();
+                    world.camera.shake(1, 0.7);
+                }
+            }
+            resolve();
+        }, { kind: 'cinematic', duration: CINEMATIC_FLIGHT, onCancel: resolve });
+    });
+}
+
+/** After the blast: the cut to black and the title. */
+async function fadeToDefeat() {
+    const run = defeatRun;
+    await world.wait(REDUCED_MOTION ? 0 : 0.25);
+    if (run === defeatRun && defeated) {
+        defeatScreen.show(REDUCED_MOTION ? 0.4 : 0.55);
+    }
+}
+
+/** Removes everything the defeat changed: black screen, locked and shaking camera, stunned sound. */
+function endDefeat() {
+    if (!defeated) {
+        return;
+    }
+    defeated = false;
+    defeatRun++;
+    defeatScreen.hide();
+    world.camera.setLocked(false);
+    world.camera.shake(0);
+    sound.recover();
 }
 
 // ---- Camera: aerial view or captain's bridge -------------------------------------
@@ -246,7 +367,7 @@ function aimHead(delay, lookDelay = delay) {
 
 /** The VIEW button and the V key: switch between the bridge and the aerial view. */
 function toggleBattleView() {
-    if (view === null || view.status === 'PLACING_SHIPS') {
+    if (view === null || view.status === 'PLACING_SHIPS' || defeated) {
         return;
     }
     preferBridge = !preferBridge;
@@ -261,6 +382,7 @@ function backToLobby(message) {
     view = null;
     pending.length = 0;
     animating = false;
+    endDefeat();
     world.showView(null);
     world.leaveBridge('lobby');
     hud.showLobby(message);
