@@ -17,7 +17,7 @@
 // - "master" is the single volume knob; SOUND ON / OFF simply turns it to 0.
 // - The limiter (a compressor) keeps thunder + explosion + ambience from clipping.
 // - The background battle has its own small volume knob in front of the effects
-//   filter, so it always stays behind the player's own guns, the thunder and
+//   filter, so it always stays behind the player's own missiles, the thunder and
 //   the pirate.
 // - "duck" is only used by the defeat cinematic: after the blast it pulls the
 //   whole world down to near silence (the player is stunned), then lets it
@@ -381,15 +381,6 @@ export function createSound() {
             source.connect(filter).connect(gain).connect(effectsBus);
             source.start(start, offset);
             source.stop(start + length + 0.1);
-        },
-
-        /** A gun firing, `distance` world units from the listener. */
-        cannon(distance = 0) {
-            if (!ready()) return;
-            const near = nearness(distance);
-            noise({ duration: 0.12, volume: 0.5 * near, type: 'highpass', from: 1800, to: 900 });   // the crack
-            noise({ duration: 0.7, volume: 0.6 * near, type: 'lowpass', from: 2200 * near + 300, to: 90 });
-            thump({ duration: 0.55, volume: 0.8 * near, from: 130, to: 32 });
         },
 
         // ---- Missiles (see scene/missiles.js) --------------------------------------

@@ -140,7 +140,7 @@ export function createFleet(scene, sinking) {
         hideGhost();
     }
 
-    /** Deck position of one of my ships that is still afloat (where shells start). */
+    /** Deck position of one of my ships that is still afloat (where missiles start). */
     function randomMuzzle() {
         const afloat = [...fleets.mine.values()].filter(entry => !entry.sunk);
         if (afloat.length === 0) {

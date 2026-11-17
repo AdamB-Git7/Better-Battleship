@@ -85,7 +85,7 @@ export function createEffects(scene, sound, sea) {
 
     /**
      * A fireball with sparks and smoke.
-     * @param size 1 = a shell hit; smaller for the little blasts on a sinking
+     * @param size 1 = a missile hit; smaller for the little blasts on a sinking
      *        ship, bigger for the killing blow
      * @param options light: false = no flash of light (for blasts that follow
      *        each other quickly, so the scene never strobes); silent: true = no sound
@@ -112,6 +112,41 @@ export function createEffects(scene, sound, sea) {
         }
         if (!silent) {
             sound.explosion(distanceTo(position));
+        }
+    }
+
+    /**
+     * The defeat blast, seen from a few dozen metres (main.js). The usual
+     * explosion is made for distant hits: seen this close, its few big puffs
+     * look like flat discs. This one is many smaller flames spread through a
+     * ball of fire, rolling outwards, and its smoke builds up slowly behind
+     * them instead of covering them at once.
+     * @param light false = no flash of light (reduced motion)
+     */
+    const spot = new THREE.Vector3();
+    function closeBlast(position, light = true) {
+        const around = radius => spot.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
+            .multiplyScalar(radius * 2).add(position);
+        for (let i = 0; i < 110; i++) {   // the ball of fire
+            // Faint layers: glowing particles add up, and too many bright ones
+            // would only make a flat white blob.
+            const color = i % 8 === 0 ? 0xfff0c0 : i % 3 === 0 ? 0xffa040 : 0xff6418;
+            spawn({ position: around(5), velocity: burst(34, (Math.random() - 0.3) * 26), life: 0.55 + Math.random() * 0.8,
+                size: [5 + Math.random() * 5, 12 + Math.random() * 10], color, colorEnd: 0x4a1003, opacity: 0.22, additive: true, drag: 2.2 });
+        }
+        for (let i = 0; i < 60; i++) {   // sparks and burning debris flung out
+            spawn({ position: around(2), velocity: burst(80, 10 + Math.random() * 40), life: 0.8 + Math.random() * 1.2,
+                size: [0.9, 0.3], color: 0xffd27a, colorEnd: 0xff5a1a, additive: true, gravity: 1, wind: 0.2 });
+        }
+        for (let i = 0; i < 30; i++) {   // black smoke, rising slowly behind the fire
+            spawn({ position: around(6), velocity: burst(10, 3 + Math.random() * 6), life: 3 + Math.random() * 2,
+                size: [7, 24], color: 0x3a2416, colorEnd: 0x0d0e10, opacity: 0.7, smoke: true, drag: 0.6, wind: 0.4, fadeIn: 1.4 });
+        }
+        if (light) {
+            flash.position.copy(position).y += 4;
+            flash.intensity = Math.max(flash.intensity, 2600 * FLASH_SCALE);
+            sea.setGlow(0, position, 4 * FLASH_SCALE);
+            seaFlash = Math.max(seaFlash, 4 * FLASH_SCALE);
         }
     }
 
@@ -313,7 +348,7 @@ export function createEffects(scene, sound, sea) {
     }
 
     return {
-        fireMissile, explosion, splash, syncFires, clear, update, resize,
+        fireMissile, explosion, closeBlast, splash, syncFires, clear, update, resize,
         // Used by the sinking (sinking.js):
         spawn, addFire, removeFire, distanceTo
     };

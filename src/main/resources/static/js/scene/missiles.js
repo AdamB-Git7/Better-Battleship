@@ -44,7 +44,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 /** Glues several geometries into one (fewer draw calls). Only positions and normals are kept. */
 function mergeParts(parts) {
-    const flat = parts.map(part => part.toNonIndexed());
+    const flat = parts.map(part => (part.index ? part.toNonIndexed() : part));
     const count = flat.reduce((sum, part) => sum + part.attributes.position.count, 0);
     const positions = new Float32Array(count * 3);
     const normals = new Float32Array(count * 3);
@@ -296,7 +296,7 @@ export function createMissiles(root, fx) {
         if (kind === 'cinematic') {
             // Out of the fog, a short climb, then nearly flat and straight at
             // the bridge windows: seen head-on, it grows and grows.
-            layOut(missile.points, from, to, 14, 0.3, 0.15);
+            layOut(missile.points, from, to, 10, 0.3, 0.1);
         } else {
             // Vertical launch, a cruise above the battlefield, a steep dive.
             // Kept low enough to stay in the bridge windows.
@@ -375,11 +375,13 @@ export function createMissiles(root, fx) {
 
     /**
      * Fraction of the length covered after a fraction u of the flight time.
-     * The speed grows steadily (slow out of the tube, fastest in the dive);
-     * the cinematic missile keeps a more even speed so it simply grows on screen.
+     * The speed changes steadily: for a real shot it grows (slow out of the
+     * tube, fastest in the dive). The cinematic missile does the opposite, a
+     * touch of slow motion: fast over the sea, slower in the last metres, so
+     * the player has time to see it grow in the window.
      */
     function distanceFraction(kind, u) {
-        const [start, growth] = kind === 'cinematic' ? [0.7, 0.6] : [0.3, 1.5];
+        const [start, growth] = kind === 'cinematic' ? [1.4, -1.1] : [0.3, 1.5];
         return (start * u + growth * u * u / 2) / (start + growth / 2);
     }
 
